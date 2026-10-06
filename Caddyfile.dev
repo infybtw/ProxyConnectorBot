@@ -6,7 +6,7 @@
 	admin off
 }
 
-{$APP_DOMAIN:pcb.localhost} {
+:8080 {
 	encode gzip
 	reverse_proxy app:8080
 }

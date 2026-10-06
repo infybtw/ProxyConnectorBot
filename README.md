@@ -55,7 +55,7 @@ internal/origin/             — запросы к провайдеру с по�
 internal/web/                — fiber: GET /s/:token, GET /healthz
 internal/botapp/             — Telegram-бот: команды, кнопки, сценарии
 internal/i18n/               — локализация ru/en (embed JSON)
-deploy/                      — Dockerfile, compose-файлы, Caddyfile'ы
+Dockerfile, docker-compose*.yml, Caddyfile*  — dev/prod-окружение
 ```
 
 ## Быстрый старт (dev)
@@ -64,7 +64,7 @@ deploy/                      — Dockerfile, compose-файлы, Caddyfile'ы
 cp .env.example .env
 # заполни TELEGRAM_BOT_TOKEN, при необходимости APP_DOMAIN / PUBLIC_BASE_URL
 
-docker compose -f deploy/docker-compose.dev.yml up --build
+docker compose -f docker-compose.dev.yml up --build
 ```
 
 Dev-стек поднимает Postgres (`localhost:5433`), приложение и Caddy с
@@ -85,7 +85,7 @@ cp .env.example .env
 # TELEGRAM_BOT_TOKEN, PUBLIC_BASE_URL=https://sub.example.com,
 # APP_DOMAIN=sub.example.com, CADDY_EMAIL, POSTGRES_PASSWORD
 
-docker compose -f deploy/docker-compose.yml up -d --build
+docker compose -f docker-compose.yml up -d --build
 ```
 
 `APP_DOMAIN` должен уже указывать на сервер: Caddy сам получит сертификат
@@ -101,7 +101,7 @@ Let's Encrypt и проксирует трафик на приложение.
 | `APP_DOMAIN`         | да (compose)| —                          | домен для Caddy                                     |
 | `CADDY_EMAIL`        | в проде     | —                          | email для Let's Encrypt                             |
 | `HTTP_ADDR`          | нет         | `:8080`                    | адрес HTTP-сервера                                  |
-| `DEFAULT_LOCALE`     | нет         | `ru`                       | язык по умолчанию (`ru` / `en`)                     |
+| `DEFAULT_LOCALE`     | нет         | `ru`                       | стартовый язык новых пользователей (`ru` / `en`)    |
 | `HWID_DEVICE_OS`     | нет         | `android`                  | значение `x-device-os` для провайдера               |
 | `HWID_VER_OS`        | нет         | `14`                       | значение `x-ver-os`                                 |
 | `HWID_DEVICE_MODEL`  | нет         | `Pixel 7`                  | значение `x-device-model`                           |

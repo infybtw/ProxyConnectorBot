@@ -1,5 +1,5 @@
 # Development stack: Postgres + app + Caddy (local HTTPS via internal CA).
-# Usage: cp .env.example .env  &&  docker compose -f deploy/docker-compose.dev.yml up --build
+# Usage: cp .env.example .env  &&  docker compose -f docker-compose.dev.yml up --build
 
 services:
   db:
@@ -21,20 +21,14 @@ services:
 
   app:
     build:
-      context: ..
-      dockerfile: deploy/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     restart: unless-stopped
+    env_file:
+      .env
     environment:
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set TELEGRAM_BOT_TOKEN in .env}
+      # Assembled automatically from the db service settings above.
       DATABASE_URL: postgres://${POSTGRES_USER:-pcb}:${POSTGRES_PASSWORD:-pcb}@db:5432/${POSTGRES_DB:-pcb}?sslmode=disable
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://pcb.localhost}
-      HTTP_ADDR: ":8080"
-      DEFAULT_LOCALE: ${DEFAULT_LOCALE:-ru}
-      HWID_DEVICE_OS: ${HWID_DEVICE_OS:-android}
-      HWID_VER_OS: ${HWID_VER_OS:-14}
-      HWID_DEVICE_MODEL: ${HWID_DEVICE_MODEL:-Pixel 7}
-      ORIGIN_USER_AGENT: ${ORIGIN_USER_AGENT:-Happ/2.4.1 (Android 14)}
-      ORIGIN_TIMEOUT: ${ORIGIN_TIMEOUT:-20s}
     depends_on:
       db:
         condition: service_healthy
@@ -44,12 +38,8 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
-    environment:
-      APP_DOMAIN: ${APP_DOMAIN:-pcb.localhost}
     ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
+      - "8080:8080"
     volumes:
       - ./Caddyfile.dev:/etc/caddy/Caddyfile:ro
       - caddy_data_dev:/data

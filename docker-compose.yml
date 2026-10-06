@@ -1,5 +1,5 @@
 # Production stack: Postgres + app + Caddy with automatic HTTPS.
-# Usage: docker compose -f deploy/docker-compose.yml up -d --build
+# Usage: docker compose -f docker-compose.yml up -d --build
 
 services:
   db:
@@ -19,8 +19,8 @@ services:
 
   app:
     build:
-      context: ..
-      dockerfile: deploy/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     restart: unless-stopped
     environment:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set TELEGRAM_BOT_TOKEN in .env}

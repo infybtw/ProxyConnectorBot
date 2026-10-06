@@ -1,7 +1,7 @@
 # Binaries and build artifacts
 /bin/
 /dist/
-pcb
+/pcb
 
 # Environment
 .env

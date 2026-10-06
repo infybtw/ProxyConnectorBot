@@ -41,6 +41,9 @@ type Bot struct {
 	origin *origin.Client
 	cfg    *config.Config
 
+	// defaultLang is the interface language assigned to new users.
+	defaultLang string
+
 	mu    sync.Mutex
 	flows map[int64]*flow
 }
@@ -48,11 +51,12 @@ type Bot struct {
 // New creates the bot and registers all handlers.
 func New(st *store.Store, oc *origin.Client, cfg *config.Config) *Bot {
 	b := &Bot{
-		tg:     gogram.NewBot(cfg.TelegramBotToken),
-		store:  st,
-		origin: oc,
-		cfg:    cfg,
-		flows:  make(map[int64]*flow),
+		tg:          gogram.NewBot(cfg.TelegramBotToken),
+		store:       st,
+		origin:      oc,
+		cfg:         cfg,
+		defaultLang: i18n.Normalize(cfg.DefaultLocale),
+		flows:       make(map[int64]*flow),
 	}
 
 	b.tg.Command("start", wrap(b.cmdStart))
@@ -103,28 +107,15 @@ func senderID(c *gogram.Context) (int64, bool) {
 	return 0, false
 }
 
-// languageCode extracts the Telegram client language of the sender.
-func languageCode(c *gogram.Context) string {
-	if c.Update == nil {
-		return ""
-	}
-	switch {
-	case c.Update.Message != nil && c.Update.Message.From != nil && c.Update.Message.From.LanguageCode != nil:
-		return *c.Update.Message.From.LanguageCode
-	case c.Update.CallbackQuery != nil && c.Update.CallbackQuery.From.LanguageCode != nil:
-		return *c.Update.CallbackQuery.From.LanguageCode
-	}
-	return ""
-}
-
-// user loads the sender's profile, creating it on first contact.
+// user loads the sender's profile, creating it on first contact. New users
+// start in the configured DEFAULT_LOCALE; language changes made via /lang are
+// persisted and take precedence from then on.
 func (b *Bot) user(c *gogram.Context) (store.User, error) {
 	id, ok := senderID(c)
 	if !ok {
 		return store.User{}, store.ErrNotFound
 	}
-	lang := i18n.Normalize(languageCode(c))
-	if err := b.store.UpsertUser(context.Background(), id, lang); err != nil {
+	if err := b.store.UpsertUser(context.Background(), id, b.defaultLang); err != nil {
 		return store.User{}, err
 	}
 	return b.store.GetUser(context.Background(), id)
@@ -134,7 +125,7 @@ func (b *Bot) user(c *gogram.Context) (store.User, error) {
 func (b *Bot) langOf(c *gogram.Context) string {
 	u, err := b.user(c)
 	if err != nil {
-		return i18n.LangRU
+		return b.defaultLang
 	}
 	return u.Lang
 }
