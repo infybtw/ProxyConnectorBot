@@ -1,0 +1,18 @@
+# Binaries and build artifacts
+/bin/
+/dist/
+pcb
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Editor and OS noise
+.idea/
+.vscode/
+.DS_Store
+
+# Test artifacts
+*.out
+*.test

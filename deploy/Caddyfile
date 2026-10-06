@@ -1,0 +1,11 @@
+# Caddy for production: automatic HTTPS via Let's Encrypt.
+# APP_DOMAIN must already point at this server.
+
+{
+	email {$CADDY_EMAIL}
+}
+
+{$APP_DOMAIN} {
+	encode gzip
+	reverse_proxy app:8080
+}

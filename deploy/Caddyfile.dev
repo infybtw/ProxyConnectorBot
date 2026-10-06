@@ -1,0 +1,12 @@
+# Caddy for local development: HTTPS with an internal (self-signed) CA.
+# Point APP_DOMAIN at 127.0.0.1 (e.g. via /etc/hosts) or use *.localhost.
+
+{
+	local_certs
+	admin off
+}
+
+{$APP_DOMAIN:pcb.localhost} {
+	encode gzip
+	reverse_proxy app:8080
+}
