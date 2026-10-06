@@ -245,34 +245,6 @@ func (s *Store) RenameSubscription(ctx context.Context, userID, id int64, name s
 	return nil
 }
 
-// SetHWID replaces the stored HWID of a subscription.
-func (s *Store) SetHWID(ctx context.Context, userID, id int64, hwid string) error {
-	tag, err := s.pool.Exec(ctx, `
-		UPDATE subscriptions SET hwid = $3, updated_at = now()
-		WHERE user_id = $1 AND id = $2`, userID, id, hwid)
-	if err != nil {
-		return fmt.Errorf("store: set hwid: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
-// SetHWIDMode switches the HWID delivery mode of a subscription.
-func (s *Store) SetHWIDMode(ctx context.Context, userID, id int64, mode, param string) error {
-	tag, err := s.pool.Exec(ctx, `
-		UPDATE subscriptions SET hwid_mode = $3, hwid_param = $4, updated_at = now()
-		WHERE user_id = $1 AND id = $2`, userID, id, mode, param)
-	if err != nil {
-		return fmt.Errorf("store: set hwid mode: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
 // newToken generates a short URL-safe public token for a subscription link.
 func newToken() (string, error) {
 	var b [18]byte

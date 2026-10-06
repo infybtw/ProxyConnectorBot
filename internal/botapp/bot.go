@@ -22,7 +22,6 @@ const (
 	flowAddURL  = "add_url"
 	flowAddName = "add_name"
 	flowRename  = "rename"
-	flowHWIDSet = "hwid_set"
 )
 
 // flow is the state of an interactive multi-step action.

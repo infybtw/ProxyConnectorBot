@@ -34,11 +34,6 @@ const (
 	cbSub         = "sub:"     // sub:<id>
 	cbSubTest     = "sub:t:"   // sub:t:<id>
 	cbSubRename   = "sub:ren:" // sub:ren:<id>
-	cbSubHWID     = "sub:h:"   // sub:h:<id>
-	cbSubHWIDRe   = "sub:hr:"  // sub:hr:<id>  -> confirm regenerate
-	cbSubHWIDReDo = "sub:hrc:" // sub:hrc:<id> -> do regenerate
-	cbSubHWIDSet  = "sub:hs:"  // sub:hs:<id>
-	cbSubMode     = "sub:m:"   // sub:m:<id>
 	cbSubDelete   = "sub:d:"   // sub:d:<id>   -> confirm delete
 	cbSubDeleteDo = "sub:dc:"  // sub:dc:<id>
 )
@@ -90,22 +85,9 @@ func kbSub(id int64, lang string) *api.InlineKeyboardMarkup {
 		[]api.InlineKeyboardButton{inlineButton(i18n.T(lang, "btn.test"), fmt.Sprintf("%s%d", cbSubTest, id))},
 		[]api.InlineKeyboardButton{
 			inlineButton(i18n.T(lang, "btn.rename"), fmt.Sprintf("%s%d", cbSubRename, id)),
-			inlineButton(i18n.T(lang, "btn.hwid"), fmt.Sprintf("%s%d", cbSubHWID, id)),
-		},
-		[]api.InlineKeyboardButton{
-			inlineButton(i18n.T(lang, "btn.mode"), fmt.Sprintf("%s%d", cbSubMode, id)),
 			inlineButton(i18n.T(lang, "btn.delete"), fmt.Sprintf("%s%d", cbSubDelete, id)),
 		},
 		[]api.InlineKeyboardButton{inlineButton(i18n.T(lang, "btn.back"), cbSubs)},
-	)
-}
-
-// kbSubHWID manages the stored HWID.
-func kbSubHWID(id int64, lang string) *api.InlineKeyboardMarkup {
-	return gogramInlineKeyboard(
-		[]api.InlineKeyboardButton{inlineButton(i18n.T(lang, "btn.regenerate"), fmt.Sprintf("%s%d", cbSubHWIDRe, id))},
-		[]api.InlineKeyboardButton{inlineButton(i18n.T(lang, "btn.set_manual"), fmt.Sprintf("%s%d", cbSubHWIDSet, id))},
-		[]api.InlineKeyboardButton{inlineButton(i18n.T(lang, "btn.back"), fmt.Sprintf("%s%d", cbSub, id))},
 	)
 }
 
@@ -114,14 +96,6 @@ func kbDeleteConfirm(id int64, lang string) *api.InlineKeyboardMarkup {
 	return gogramInlineKeyboard(
 		[]api.InlineKeyboardButton{inlineButton(i18n.T(lang, "btn.delete_confirm"), fmt.Sprintf("%s%d", cbSubDeleteDo, id))},
 		[]api.InlineKeyboardButton{inlineButton(i18n.T(lang, "btn.cancel"), fmt.Sprintf("%s%d", cbSub, id))},
-	)
-}
-
-// kbHWIDConfirm asks for a HWID regeneration confirmation.
-func kbHWIDConfirm(id int64, lang string) *api.InlineKeyboardMarkup {
-	return gogramInlineKeyboard(
-		[]api.InlineKeyboardButton{inlineButton(i18n.T(lang, "btn.regenerate"), fmt.Sprintf("%s%d", cbSubHWIDReDo, id))},
-		[]api.InlineKeyboardButton{inlineButton(i18n.T(lang, "btn.cancel"), fmt.Sprintf("%s%d", cbSubHWID, id))},
 	)
 }
 

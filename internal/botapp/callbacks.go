@@ -7,7 +7,6 @@ import (
 
 	gogram "github.com/infybtw/GoGramm"
 
-	"github.com/infybtw/ProxyConnectorBot/internal/hwid"
 	"github.com/infybtw/ProxyConnectorBot/internal/i18n"
 	"github.com/infybtw/ProxyConnectorBot/internal/store"
 )
@@ -70,37 +69,6 @@ func (b *Bot) onCallback(c *gogram.Context) error {
 // specific prefixes are matched first.
 func (b *Bot) dispatchSubCallback(c *gogram.Context, uid int64, lang, data string) {
 	switch {
-	case hasPrefixAndID(cbSubHWIDReDo, data):
-		id, _ := parseID(cbSubHWIDReDo, data)
-		b.actHWIDRegenerate(c, uid, lang, id)
-
-	case hasPrefixAndID(cbSubHWIDRe, data):
-		id, _ := parseID(cbSubHWIDRe, data)
-		sub, ok := b.loadSub(c, uid, lang, id)
-		if !ok {
-			return
-		}
-		answerCallback(c, "", false)
-		editHTML(c, i18n.T(lang, "sub.hwid.confirm", sub.Name), kbHWIDConfirm(id, lang))
-
-	case hasPrefixAndID(cbSubHWIDSet, data):
-		id, _ := parseID(cbSubHWIDSet, data)
-		if _, ok := b.loadSub(c, uid, lang, id); !ok {
-			return
-		}
-		answerCallback(c, "", false)
-		b.startFlow(uid, &flow{kind: flowHWIDSet, subID: id})
-		editHTML(c, i18n.T(lang, "sub.hwid.ask"), kbCancelFlow(lang))
-
-	case hasPrefixAndID(cbSubHWID, data):
-		id, _ := parseID(cbSubHWID, data)
-		sub, ok := b.loadSub(c, uid, lang, id)
-		if !ok {
-			return
-		}
-		answerCallback(c, "", false)
-		editHTML(c, i18n.T(lang, "sub.hwid.text", sub.Name, sub.HWID), kbSubHWID(id, lang))
-
 	case hasPrefixAndID(cbSubDeleteDo, data):
 		id, _ := parseID(cbSubDeleteDo, data)
 		b.actDelete(c, uid, lang, id)
@@ -122,10 +90,6 @@ func (b *Bot) dispatchSubCallback(c *gogram.Context, uid int64, lang, data strin
 		answerCallback(c, "", false)
 		b.startFlow(uid, &flow{kind: flowRename, subID: id})
 		editHTML(c, i18n.T(lang, "sub.rename.ask"), kbCancelFlow(lang))
-
-	case hasPrefixAndID(cbSubMode, data):
-		id, _ := parseID(cbSubMode, data)
-		b.actToggleMode(c, uid, lang, id)
 
 	case hasPrefixAndID(cbSubTest, data):
 		id, _ := parseID(cbSubTest, data)
@@ -162,49 +126,6 @@ func (b *Bot) actTest(c *gogram.Context, uid int64, lang string, id int64) {
 		return
 	}
 	sendHTML(c, i18n.T(lang, "sub.test_ok", res.StatusCode, len(res.Body), res.Header.Get("Content-Type")), kbSub(id, lang))
-}
-
-// actHWIDRegenerate replaces the stored HWID with a fresh one.
-func (b *Bot) actHWIDRegenerate(c *gogram.Context, uid int64, lang string, id int64) {
-	if _, ok := b.loadSub(c, uid, lang, id); !ok {
-		return
-	}
-	fresh, err := hwid.Generate()
-	if err != nil {
-		answerCallback(c, "", false)
-		sendHTML(c, i18n.T(lang, "err.generic"), nil)
-		return
-	}
-	if err := b.store.SetHWID(context.Background(), uid, id, fresh); err != nil {
-		answerCallback(c, "", false)
-		sendHTML(c, i18n.T(lang, "err.db"), nil)
-		return
-	}
-	sub, _ := b.store.GetSubscription(context.Background(), uid, id)
-	answerCallback(c, "", false)
-	editHTML(c, i18n.T(lang, "sub.hwid.regenerated", fresh)+"\n\n"+renderSubDetail(sub, lang, b.cfg.PublicBaseURL), kbSub(id, lang))
-}
-
-// actToggleMode switches between the x-hwid header and a query parameter.
-func (b *Bot) actToggleMode(c *gogram.Context, uid int64, lang string, id int64) {
-	sub, ok := b.loadSub(c, uid, lang, id)
-	if !ok {
-		return
-	}
-	mode, param := store.HWIDModeHeader, "x-hwid"
-	if sub.HWIDMode == store.HWIDModeHeader {
-		mode, param = store.HWIDModeQuery, "hwid"
-	}
-	if err := b.store.SetHWIDMode(context.Background(), uid, id, mode, param); err != nil {
-		answerCallback(c, "", false)
-		sendHTML(c, i18n.T(lang, "err.db"), nil)
-		return
-	}
-	sub.HWIDMode, sub.HWIDParam = mode, param
-	answerCallback(c, "", false)
-	editHTML(c,
-		i18n.T(lang, "sub.mode.switched", renderMode(sub, lang))+"\n\n"+renderSubDetail(sub, lang, b.cfg.PublicBaseURL),
-		kbSub(id, lang))
 }
 
 // actDelete removes a subscription after confirmation.

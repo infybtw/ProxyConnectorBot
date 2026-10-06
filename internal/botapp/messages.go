@@ -106,8 +106,6 @@ func (b *Bot) onMessage(c *gogram.Context) error {
 		return b.flowAddName(c, id, lang, text)
 	case flowRename:
 		return b.flowRename(c, id, lang, text)
-	case flowHWIDSet:
-		return b.flowHWIDSet(c, id, lang, text)
 	default:
 		b.clearFlow(id)
 		sendHTML(c, i18n.T(lang, "flow.unknown"), kbMenu(lang))
@@ -218,30 +216,6 @@ func (b *Bot) flowRename(c *gogram.Context, uid int64, lang, text string) error 
 	return nil
 }
 
-// flowHWIDSet saves a manually provided HWID.
-func (b *Bot) flowHWIDSet(c *gogram.Context, uid int64, lang, text string) error {
-	f := b.takeFlow(uid)
-	if f == nil {
-		return nil
-	}
-	value := strings.TrimSpace(text)
-	if !validHWID(value) {
-		b.startFlow(uid, f)
-		sendHTML(c, i18n.T(lang, "sub.hwid.invalid"), kbCancelFlow(lang))
-		return nil
-	}
-	if err := b.store.SetHWID(context.Background(), uid, f.subID, value); err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			sendHTML(c, i18n.T(lang, "sub.not_found"), kbMenu(lang))
-			return nil
-		}
-		sendHTML(c, i18n.T(lang, "err.db"), kbMenu(lang))
-		return err
-	}
-	sendHTML(c, i18n.T(lang, "sub.hwid.set", value)+b.detailBlock(uid, f.subID, lang), kbSub(f.subID, lang))
-	return nil
-}
-
 // detailBlock renders the detail card of a subscription as an appendix.
 func (b *Bot) detailBlock(uid, subID int64, lang string) string {
 	sub, err := b.store.GetSubscription(context.Background(), uid, subID)
@@ -273,14 +247,6 @@ func defaultName(rawURL string) string {
 		return "subscription"
 	}
 	return u.Host
-}
-
-// validHWID reports whether value looks like an acceptable HWID.
-func validHWID(value string) bool {
-	if value == "" || len(value) > 128 {
-		return false
-	}
-	return !strings.ContainsAny(value, " \t\r\n")
 }
 
 // isCancelText matches localized cancel commands typed as plain text.
