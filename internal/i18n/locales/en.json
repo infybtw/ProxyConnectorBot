@@ -10,6 +10,7 @@
   "btn.cancel": "✖️ Cancel",
   "btn.skip": "⏭ Skip",
   "btn.test": "🔄 Test",
+  "btn.devices": "📱 Devices",
   "btn.rename": "✏️ Rename",
   "btn.delete": "🗑 Delete",
   "btn.delete_confirm": "❗️ Yes, delete",
@@ -33,6 +34,15 @@
   "sub.delete_confirm": "⚠️ Delete subscription \"{0}\"? This cannot be undone.",
   "sub.rename.ask": "Send a new name for the subscription (max 64 characters).",
   "sub.renamed": "✅ Subscription renamed to \"{0}\".",
+
+  "devices.title": "📱 Devices of \"{0}\" ({1}):",
+  "devices.empty": "No connections yet. As soon as an app refreshes the subscription, the device will appear here.",
+  "devices.hwid": "🔑 HWID: <code>{0}</code>",
+  "devices.anon": "🆔 no HWID (by metadata)",
+  "devices.device": "👤 {0}",
+  "devices.ua": "🌐 UA: <code>{0}</code>",
+  "devices.ip": "📍 IP: <code>{0}</code>",
+  "devices.stats": "📈 Requests: {0} · 🕒 {1}",
 
   "lang.choose": "🌐 Choose language / Выбери язык:",
   "lang.set": "✅ Language set to English.",

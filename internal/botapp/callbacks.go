@@ -95,6 +95,10 @@ func (b *Bot) dispatchSubCallback(c *gogram.Context, uid int64, lang, data strin
 		id, _ := parseID(cbSubTest, data)
 		b.actTest(c, uid, lang, id)
 
+	case hasPrefixAndID(cbSubDevices, data):
+		id, _ := parseID(cbSubDevices, data)
+		b.actDevices(c, uid, lang, id)
+
 	case hasPrefixAndID(cbSub, data):
 		id, _ := parseID(cbSub, data)
 		sub, ok := b.loadSub(c, uid, lang, id)
@@ -126,6 +130,22 @@ func (b *Bot) actTest(c *gogram.Context, uid int64, lang string, id int64) {
 		return
 	}
 	sendHTML(c, i18n.T(lang, "sub.test_ok", res.StatusCode, len(res.Body), res.Header.Get("Content-Type")), kbSub(id, lang))
+}
+
+// actDevices lists the devices that fetched the subscription.
+func (b *Bot) actDevices(c *gogram.Context, uid int64, lang string, id int64) {
+	sub, ok := b.loadSub(c, uid, lang, id)
+	if !ok {
+		return
+	}
+	devices, err := b.store.ListDevices(context.Background(), id, 30)
+	if err != nil {
+		answerCallback(c, "", false)
+		sendHTML(c, i18n.T(lang, "err.db"), nil)
+		return
+	}
+	answerCallback(c, "", false)
+	editHTML(c, renderDevices(sub.Name, lang, devices), kbSub(id, lang))
 }
 
 // actDelete removes a subscription after confirmation.

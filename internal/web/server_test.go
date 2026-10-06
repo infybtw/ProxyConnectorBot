@@ -80,6 +80,8 @@ func TestSubscriptionPassthrough(t *testing.T) {
 	server := NewServer(st, oc)
 
 	req := httptest.NewRequest(http.MethodGet, "/s/"+sub.Token, nil)
+	req.Header.Set("User-Agent", "v2rayNG/1.8.5")
+	req.Header.Set("X-Forwarded-For", "203.0.113.7")
 	resp, err := server.App().Test(req, fiber.TestConfig{Timeout: 10 * time.Second, FailOnTimeout: true})
 	if err != nil {
 		t.Fatalf("request: %v", err)
@@ -108,6 +110,57 @@ func TestSubscriptionPassthrough(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("unknown token status = %d", resp.StatusCode)
+	}
+
+	// Device tracking: the client without HWID is recorded by metadata.
+	devices, err := st.ListDevices(ctx, sub.ID, 10)
+	if err != nil {
+		t.Fatalf("list devices: %v", err)
+	}
+	if len(devices) != 1 {
+		t.Fatalf("devices = %d, want 1", len(devices))
+	}
+	if devices[0].HWID != "" {
+		t.Fatalf("anonymous device recorded with hwid %q", devices[0].HWID)
+	}
+	if devices[0].UserAgent != "v2rayNG/1.8.5" || devices[0].IP != "203.0.113.7" || devices[0].Requests != 1 {
+		t.Fatalf("anonymous device = %+v", devices[0])
+	}
+
+	// A client that sends a HWID is tracked separately, and repeated requests
+	// bump the counter instead of creating a new device.
+	for i := 0; i < 2; i++ {
+		req = httptest.NewRequest(http.MethodGet, "/s/"+sub.Token, nil)
+		req.Header.Set("x-hwid", wantHWID)
+		req.Header.Set("User-Agent", "Happ/2.4.1")
+		resp, err = server.App().Test(req, fiber.TestConfig{Timeout: 10 * time.Second, FailOnTimeout: true})
+		if err != nil {
+			t.Fatalf("request: %v", err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("hwid client status = %d", resp.StatusCode)
+		}
+	}
+
+	devices, err = st.ListDevices(ctx, sub.ID, 10)
+	if err != nil {
+		t.Fatalf("list devices: %v", err)
+	}
+	if len(devices) != 2 {
+		t.Fatalf("devices = %d, want 2", len(devices))
+	}
+	var hwidDev *store.Device
+	for i := range devices {
+		if devices[i].HWID == wantHWID {
+			hwidDev = &devices[i]
+		}
+	}
+	if hwidDev == nil {
+		t.Fatal("device with hwid not found")
+	}
+	if hwidDev.Requests != 2 || hwidDev.UserAgent != "Happ/2.4.1" {
+		t.Fatalf("hwid device = %+v", *hwidDev)
 	}
 
 	if strings.TrimSpace(sub.Token) == "" {

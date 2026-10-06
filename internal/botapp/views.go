@@ -3,6 +3,7 @@ package botapp
 import (
 	"fmt"
 	"html"
+	"strings"
 	"time"
 
 	gogram "github.com/infybtw/GoGramm"
@@ -32,6 +33,7 @@ const (
 	cbLangPrefix  = "lang:"
 
 	cbSub         = "sub:"     // sub:<id>
+	cbSubDevices  = "sub:dev:" // sub:dev:<id>
 	cbSubTest     = "sub:t:"   // sub:t:<id>
 	cbSubRename   = "sub:ren:" // sub:ren:<id>
 	cbSubDelete   = "sub:d:"   // sub:d:<id>   -> confirm delete
@@ -82,7 +84,10 @@ func kbSubs(subs []store.Subscription, lang string) *api.InlineKeyboardMarkup {
 // kbSub is the detail keyboard of one subscription.
 func kbSub(id int64, lang string) *api.InlineKeyboardMarkup {
 	return gogramInlineKeyboard(
-		[]api.InlineKeyboardButton{inlineButton(i18n.T(lang, "btn.test"), fmt.Sprintf("%s%d", cbSubTest, id))},
+		[]api.InlineKeyboardButton{
+			inlineButton(i18n.T(lang, "btn.test"), fmt.Sprintf("%s%d", cbSubTest, id)),
+			inlineButton(i18n.T(lang, "btn.devices"), fmt.Sprintf("%s%d", cbSubDevices, id)),
+		},
 		[]api.InlineKeyboardButton{
 			inlineButton(i18n.T(lang, "btn.rename"), fmt.Sprintf("%s%d", cbSubRename, id)),
 			inlineButton(i18n.T(lang, "btn.delete"), fmt.Sprintf("%s%d", cbSubDelete, id)),
@@ -142,4 +147,46 @@ func subscriptionLink(baseURL, token string) string {
 // formatTime renders a timestamp with the locale's layout.
 func formatTime(t time.Time, lang string) string {
 	return t.Format(i18n.T(lang, "time.format"))
+}
+
+// renderDevices builds the message listing the devices of one subscription.
+func renderDevices(name, lang string, devices []store.Device) string {
+	if len(devices) == 0 {
+		return i18n.T(lang, "devices.empty")
+	}
+	var b strings.Builder
+	b.WriteString(i18n.T(lang, "devices.title", html.EscapeString(name), len(devices)))
+	for i, d := range devices {
+		b.WriteString("\n\n")
+		fmt.Fprintf(&b, "%d. ", i+1)
+		if d.HWID != "" {
+			b.WriteString(i18n.T(lang, "devices.hwid", html.EscapeString(d.HWID)))
+		} else {
+			b.WriteString(i18n.T(lang, "devices.anon"))
+		}
+		if meta := deviceMeta(d); meta != "" {
+			b.WriteString("\n" + i18n.T(lang, "devices.device", html.EscapeString(meta)))
+		}
+		if d.UserAgent != "" {
+			b.WriteString("\n" + i18n.T(lang, "devices.ua", html.EscapeString(d.UserAgent)))
+		}
+		if d.IP != "" {
+			b.WriteString("\n" + i18n.T(lang, "devices.ip", html.EscapeString(d.IP)))
+		}
+		b.WriteString("\n" + i18n.T(lang, "devices.stats", d.Requests, formatTime(d.LastSeen, lang)))
+	}
+	return b.String()
+}
+
+// deviceMeta renders the model and OS of a device, skipping empty parts.
+func deviceMeta(d store.Device) string {
+	os := strings.TrimSpace(strings.TrimSpace(d.OS) + " " + strings.TrimSpace(d.OSVersion))
+	parts := make([]string, 0, 2)
+	if d.Model != "" {
+		parts = append(parts, d.Model)
+	}
+	if os != "" {
+		parts = append(parts, os)
+	}
+	return strings.Join(parts, " · ")
 }

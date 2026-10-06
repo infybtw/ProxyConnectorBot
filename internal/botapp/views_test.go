@@ -17,7 +17,7 @@ func TestKbSubOnlyHasCoreActions(t *testing.T) {
 		}
 	}
 
-	want := []string{"sub:t:5", "sub:ren:5", "sub:d:5", "subs"}
+	want := []string{"sub:t:5", "sub:dev:5", "sub:ren:5", "sub:d:5", "subs"}
 	if len(got) != len(want) {
 		t.Fatalf("buttons = %v, want %v", got, want)
 	}

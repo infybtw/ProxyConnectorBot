@@ -3,6 +3,8 @@ package web
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"log/slog"
 	"strings"
@@ -88,6 +90,12 @@ func (s *Server) handleSubscription(ctx fiber.Ctx) error {
 		return ctx.Status(fiber.StatusInternalServerError).SendString("internal error")
 	}
 
+	// Best effort: remember which device fetched the subscription, even if
+	// the origin request below fails.
+	if err := s.store.TouchDevice(ctx.Context(), sub.ID, deviceInfo(ctx)); err != nil {
+		slog.Warn("web: record device failed", "sub_id", sub.ID, "err", err)
+	}
+
 	res, err := s.origin.Fetch(ctx.Context(), sub)
 	if err != nil {
 		slog.Error("web: origin fetch failed", "sub_id", sub.ID, "err", err)
@@ -107,4 +115,72 @@ func (s *Server) handleSubscription(ctx fiber.Ctx) error {
 		}
 	}
 	return ctx.Status(res.StatusCode).Send(res.Body)
+}
+
+// Metadata limits protect the database from oversized or abusive headers.
+const (
+	maxHWIDLen  = 128
+	maxUALen    = 512
+	maxOSLen    = 64
+	maxModelLen = 128
+	maxIPLen    = 64
+)
+
+// deviceInfo extracts the identity of the client that made the request.
+func deviceInfo(ctx fiber.Ctx) store.DeviceInfo {
+	hwid := truncate(firstNonEmpty(ctx.Get("x-hwid"), ctx.Query("hwid")), maxHWIDLen)
+	ua := truncate(ctx.Get("User-Agent"), maxUALen)
+	os := truncate(ctx.Get("x-device-os"), maxOSLen)
+	osVer := truncate(ctx.Get("x-ver-os"), maxOSLen)
+	model := truncate(ctx.Get("x-device-model"), maxModelLen)
+	ip := truncate(clientIP(ctx), maxIPLen)
+
+	key := "hwid:" + hwid
+	if hwid == "" {
+		key = "ua:" + fingerprint(ua, os, osVer, model)
+	}
+	return store.DeviceInfo{
+		Key:       key,
+		HWID:      hwid,
+		UserAgent: ua,
+		OS:        os,
+		OSVersion: osVer,
+		Model:     model,
+		IP:        ip,
+	}
+}
+
+// clientIP prefers the X-Forwarded-For address set by the reverse proxy.
+func clientIP(ctx fiber.Ctx) string {
+	if xff := ctx.Get("X-Forwarded-For"); xff != "" {
+		if first := strings.TrimSpace(strings.Split(xff, ",")[0]); first != "" {
+			return first
+		}
+	}
+	return ctx.IP()
+}
+
+// fingerprint builds a short stable id from device metadata for clients that
+// do not send a HWID.
+func fingerprint(parts ...string) string {
+	sum := sha256.Sum256([]byte(strings.Join(parts, "|")))
+	return hex.EncodeToString(sum[:8])
+}
+
+// firstNonEmpty returns the first non-empty string.
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// truncate caps s to n bytes.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n]
 }

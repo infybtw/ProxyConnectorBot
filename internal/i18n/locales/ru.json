@@ -10,6 +10,7 @@
   "btn.cancel": "✖️ Отмена",
   "btn.skip": "⏭ Пропустить",
   "btn.test": "🔄 Проверить",
+  "btn.devices": "📱 Устройства",
   "btn.rename": "✏️ Переименовать",
   "btn.delete": "🗑 Удалить",
   "btn.delete_confirm": "❗️ Да, удалить",
@@ -33,6 +34,15 @@
   "sub.delete_confirm": "⚠️ Удалить подписку «{0}»? Это действие необратимо.",
   "sub.rename.ask": "Отправь новое название для подписки (макс. 64 символа).",
   "sub.renamed": "✅ Подписка переименована в «{0}».",
+
+  "devices.title": "📱 Устройства подписки «{0}» ({1}):",
+  "devices.empty": "Подключений пока нет. Как только приложение обновит подписку, устройство появится здесь.",
+  "devices.hwid": "🔑 HWID: <code>{0}</code>",
+  "devices.anon": "🆔 без HWID (по метаданным)",
+  "devices.device": "👤 {0}",
+  "devices.ua": "🌐 UA: <code>{0}</code>",
+  "devices.ip": "📍 IP: <code>{0}</code>",
+  "devices.stats": "📈 Запросов: {0} · 🕒 {1}",
 
   "lang.choose": "🌐 Выбери язык / Choose language:",
   "lang.set": "✅ Язык изменён на русский.",

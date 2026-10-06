@@ -245,6 +245,86 @@ func (s *Store) RenameSubscription(ctx context.Context, userID, id int64, name s
 	return nil
 }
 
+// DeviceInfo is the metadata captured from a client that fetched a
+// subscription through our domain.
+type DeviceInfo struct {
+	// Key groups requests from the same device. When HWID is empty the caller
+	// supplies a fingerprint key.
+	Key       string
+	HWID      string
+	UserAgent string
+	OS        string
+	OSVersion string
+	Model     string
+	IP        string
+}
+
+// Device is a stored device record.
+type Device struct {
+	DeviceKey string
+	HWID      string
+	UserAgent string
+	OS        string
+	OSVersion string
+	Model     string
+	IP        string
+	Requests  int64
+	FirstSeen time.Time
+	LastSeen  time.Time
+}
+
+// TouchDevice records a subscription fetch, creating the device on first
+// contact and bumping counters and metadata afterwards. Empty metadata never
+// overwrites previously known values.
+func (s *Store) TouchDevice(ctx context.Context, subID int64, d DeviceInfo) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO devices (subscription_id, device_key, hwid, user_agent, device_os, os_version, device_model, ip)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		ON CONFLICT (subscription_id, device_key) DO UPDATE SET
+			requests     = devices.requests + 1,
+			last_seen    = now(),
+			hwid         = COALESCE(NULLIF(EXCLUDED.hwid, ''), devices.hwid),
+			user_agent   = COALESCE(NULLIF(EXCLUDED.user_agent, ''), devices.user_agent),
+			device_os    = COALESCE(NULLIF(EXCLUDED.device_os, ''), devices.device_os),
+			os_version   = COALESCE(NULLIF(EXCLUDED.os_version, ''), devices.os_version),
+			device_model = COALESCE(NULLIF(EXCLUDED.device_model, ''), devices.device_model),
+			ip           = EXCLUDED.ip`,
+		subID, d.Key, d.HWID, d.UserAgent, d.OS, d.OSVersion, d.Model, d.IP)
+	if err != nil {
+		return fmt.Errorf("store: touch device: %w", err)
+	}
+	return nil
+}
+
+// ListDevices returns the devices of a subscription, most recent first.
+func (s *Store) ListDevices(ctx context.Context, subID int64, limit int) ([]Device, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT device_key, hwid, user_agent, device_os, os_version, device_model, ip,
+		       requests, first_seen, last_seen
+		FROM devices
+		WHERE subscription_id = $1
+		ORDER BY last_seen DESC
+		LIMIT $2`, subID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("store: list devices: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Device
+	for rows.Next() {
+		var d Device
+		if err := rows.Scan(&d.DeviceKey, &d.HWID, &d.UserAgent, &d.OS, &d.OSVersion,
+			&d.Model, &d.IP, &d.Requests, &d.FirstSeen, &d.LastSeen); err != nil {
+			return nil, fmt.Errorf("store: scan device: %w", err)
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
 // newToken generates a short URL-safe public token for a subscription link.
 func newToken() (string, error) {
 	var b [18]byte
