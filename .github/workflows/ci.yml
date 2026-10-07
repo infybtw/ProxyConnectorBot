@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Only one release run per tag at a time.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Build the Docker image and hand it to the push job as an artifact.
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          load: true
+          tags: pcb:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Save image to a tarball
+        run: docker save pcb:ci | gzip > /tmp/pcb-image.tar.gz
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pcb-image
+          path: /tmp/pcb-image.tar.gz
+          retention-days: 1
+          if-no-files-found: error
+
+  # Publish the built image to GitHub Container Registry: first the version
+  # tag (vX.Y.Z), then latest.
+  push:
+    name: Push
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Compute lowercase image name
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pcb-image
+          path: /tmp
+
+      - name: Load image
+        run: gunzip -c /tmp/pcb-image.tar.gz | docker load
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Push version tag
+        run: |
+          docker tag pcb:ci "$IMAGE:${{ github.ref_name }}"
+          docker push "$IMAGE:${{ github.ref_name }}"
+
+      - name: Push latest
+        run: |
+          docker tag pcb:ci "$IMAGE:latest"
+          docker push "$IMAGE:latest"

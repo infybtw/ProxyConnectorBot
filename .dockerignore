@@ -1,0 +1,9 @@
+.git
+.github
+.gitignore
+.env
+.env.*
+*.md
+bin/
+dist/
+/tmp/
