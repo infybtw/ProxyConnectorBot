@@ -32,17 +32,17 @@ describe("origin views never expose the HWID", () => {
     const text = renderOrigins([origin(), origin({ id: 8, url: "https://panel.example.com/x", enabled: false })], "ru");
     expect(text).not.toContain(SECRET);
     expect(text).not.toContain("/sub/abc");
-    expect(text).toBe("1. panel.example.com - Включен\n2. panel.example.com - Выключен");
+    expect(text).toBe("1. panel.example.com - ✅ Включен\n2. panel.example.com - ⏸ Выключен");
   });
 
   test("renderOriginSettings hides the HWID and shows the status", () => {
     const text = renderOriginSettings(origin(), "ru");
     expect(text).not.toContain(SECRET);
-    expect(text).toContain("Включен");
+    expect(text).toContain("✅ Включен");
   });
 
   test("renderOriginSettings marks a disabled origin", () => {
-    expect(renderOriginSettings(origin({ enabled: false }), "ru")).toContain("Выключен");
+    expect(renderOriginSettings(origin({ enabled: false }), "ru")).toContain("⏸ Выключен");
   });
 });
 
