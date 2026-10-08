@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { kbOriginSettings, kbOrigins, renderOriginSettings, renderOrigins } from "../src/bot/views";
+import { kbOriginSettings, kbOrigins, kbSub, renderOriginSettings, renderOrigins } from "../src/bot/views";
 import type { Origin, Subscription } from "../src/store";
 
 const SECRET = "270DD26E-160D-4257-B8AC-654800E12F24";
@@ -57,5 +57,11 @@ describe("origin keyboards", () => {
     expect(dataOf(enabled.inline_keyboard[0]![0])).toBe("sub:oe:7");
     expect(dataOf(enabled.inline_keyboard[1]![0])).toBe("sub:og:7");
     expect(dataOf(enabled.inline_keyboard[2]![0])).toBe("sub:o:3");
+  });
+
+  test("the subscription screen offers a QR code button", () => {
+    const keyboard = kbSub(3, "ru");
+    const buttons = keyboard.inline_keyboard.flat();
+    expect(buttons.map(dataOf)).toContain("sub:q:3");
   });
 });

@@ -166,6 +166,7 @@ ghcr.io/<owner>/<repo>:latest
 | `/cancel` | cancel the current flow                         |
 
 The subscription card provides: a provider connectivity check, the device list,
+a QR code of the subscription link (the "🔳 QR code" button, sent as a photo),
 renaming and deletion.
 
 Each user sees only their own subscriptions.
