@@ -55,6 +55,12 @@ Go-style duration string (`20s`, `1m30s`).
   normally `x-hwid`) or `query`. `detectHwidMode` (`src/url.ts`) picks query mode
   only when the origin URL already has a query key containing `hwid`, reusing that
   key name.
+- Origins have an `enabled` flag (migration `0003_origin_enabled.sql`). Disabled
+  origins are kept in the DB but excluded from `/s/:token` (see `web.ts`) and from
+  the bot's «Проверить»/Test. The bot **never displays the HWID value** anywhere —
+  only URL, delivery mode and status; this is enforced by `tests/views.test.ts`.
+  Per-origin settings are reached by `sub:or:<origin id>` with `sub:oe:<id>`
+  (toggle) and `sub:og:<id>` (delete).
 - `/s/:token` is a transparent passthrough (status, body, headers), but
   `src/web.ts` strips hop-by-hop headers plus identity headers `x-hwid`,
   `x-device-os`, `x-ver-os`, `x-device-model` so the bound HWID never leaks to

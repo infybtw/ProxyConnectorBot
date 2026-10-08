@@ -62,7 +62,9 @@ export function createServer(store: Store, origin: OriginClient) {
         log.error("web: lookup failed", { token, err });
         return text("internal error", 500);
       }
-      if (sub.origins.length === 0) return text("subscription has no origins", 404);
+      // Disabled origins are kept in the database but excluded from serving.
+      const origins = sub.origins.filter((o) => o.enabled);
+      if (origins.length === 0) return text("subscription has no origins", 404);
 
       // Best effort: remember which device fetched the subscription, even if
       // the origin requests below fail.
@@ -72,9 +74,9 @@ export function createServer(store: Store, origin: OriginClient) {
         log.warn("web: record device failed", { sub_id: sub.id, err });
       }
 
-      const results = await fetchOrigins(origin, sub);
+      const results = await fetchOrigins(origin, sub.id, origins);
 
-      if (sub.origins.length === 1) {
+      if (origins.length === 1) {
         const result = results[0]!;
         if (result.err !== undefined || result.res === undefined) {
           return text("origin unavailable", 502);
@@ -111,7 +113,7 @@ export function createServer(store: Store, origin: OriginClient) {
 
       log.info("web: subscription served", {
         sub_id: sub.id,
-        origins: sub.origins.length,
+        origins: origins.length,
         merged: parts.length,
         size: merged.body.byteLength,
       });
@@ -122,14 +124,18 @@ export function createServer(store: Store, origin: OriginClient) {
     });
 }
 
-/** Requests every origin of the subscription concurrently, keeping their order. */
-async function fetchOrigins(origin: OriginClient, sub: Subscription): Promise<FetchResult[]> {
+/** Requests every enabled origin concurrently, keeping their order. */
+async function fetchOrigins(
+  origin: OriginClient,
+  subId: number,
+  origins: Subscription["origins"],
+): Promise<FetchResult[]> {
   return await Promise.all(
-    sub.origins.map(async (o) => {
+    origins.map(async (o) => {
       try {
         return { res: await origin.fetch(o) } satisfies FetchResult;
       } catch (err) {
-        log.error("web: origin fetch failed", { sub_id: sub.id, origin_id: o.id, err });
+        log.error("web: origin fetch failed", { sub_id: subId, origin_id: o.id, err });
         return { err } satisfies FetchResult;
       }
     }),

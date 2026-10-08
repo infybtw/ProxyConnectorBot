@@ -170,4 +170,52 @@ describeIf("integration", () => {
 
     await cleanupUser(userId);
   });
+
+  test("excludes disabled origins from serving", async () => {
+    const hwidA = "AAAA-1111";
+    const hwidB = "BBBB-2222";
+    const originA = originServer((req) =>
+      req.headers.get("x-hwid") === hwidA ? new Response("vless://a") : new Response(null, { status: 403 }),
+    );
+    const originB = originServer((req) =>
+      req.headers.get("x-hwid") === hwidB ? new Response("vless://b") : new Response(null, { status: 403 }),
+    );
+
+    const userId = 454545;
+    await cleanupUser(userId);
+    await store.upsertUser(userId, "ru");
+    const sub = await store.createSubscription({
+      userId,
+      name: "toggle",
+      origins: [
+        { url: originA, hwid: hwidA, hwidMode: "header", hwidParam: "x-hwid" },
+        { url: originB, hwid: hwidB, hwidMode: "header", hwidParam: "x-hwid" },
+      ],
+    });
+    expect(sub.origins.every((o) => o.enabled)).toBe(true);
+
+    const oc = new OriginClient(5_000, 1 << 20, device);
+    const app = createServer(store, oc);
+
+    const merged = await app.handle(new Request(`http://localhost/s/${sub.token}`));
+    expect(await merged.text()).toBe("vless://a\nvless://b");
+
+    // Disabling one origin excludes it, leaving the other as a passthrough.
+    await store.setOriginEnabled(userId, sub.origins[1]!.id, false);
+    const loaded = await store.getOrigin(userId, sub.origins[1]!.id);
+    expect(loaded.origin.enabled).toBe(false);
+
+    const single = await app.handle(new Request(`http://localhost/s/${sub.token}`));
+    expect(await single.text()).toBe("vless://a");
+
+    // With every origin disabled there is nothing to serve.
+    await store.setOriginEnabled(userId, sub.origins[0]!.id, false);
+    const none = await app.handle(new Request(`http://localhost/s/${sub.token}`));
+    expect(none.status).toBe(404);
+
+    // Toggling an origin of another user is rejected.
+    await expect(store.setOriginEnabled(userId + 1, sub.origins[0]!.id, true)).rejects.toBeInstanceOf(NotFoundError);
+
+    await cleanupUser(userId);
+  });
 });

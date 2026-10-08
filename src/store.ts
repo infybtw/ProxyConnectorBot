@@ -21,6 +21,8 @@ export interface Origin {
   hwid: string;
   hwidMode: string;
   hwidParam: string;
+  /** Whether the origin takes part in subscription serving. */
+  enabled: boolean;
   createdAt: Date;
 }
 
@@ -104,6 +106,7 @@ function mapOrigin(row: Row): Origin {
     hwid: String(row.hwid),
     hwidMode: String(row.hwid_mode),
     hwidParam: String(row.hwid_param),
+    enabled: row.enabled === true,
     createdAt: date(row.created_at),
   };
 }
@@ -160,7 +163,7 @@ export class Store {
                                  (subscription_id, origin_url, hwid, hwid_mode, hwid_param)
                                VALUES (${sub.id}, ${origin.url}, ${origin.hwid},
                                        ${origin.hwidMode}, ${origin.hwidParam})
-                               RETURNING id, subscription_id, origin_url, hwid, hwid_mode, hwid_param, created_at`) as Row[];
+                               RETURNING id, subscription_id, origin_url, hwid, hwid_mode, hwid_param, enabled, created_at`) as Row[];
         sub.origins.push(mapOrigin(orows[0]!));
       }
       return sub;
@@ -226,7 +229,7 @@ export class Store {
                               (subscription_id, origin_url, hwid, hwid_mode, hwid_param)
                             VALUES (${subId}, ${origin.url}, ${origin.hwid},
                                     ${origin.hwidMode}, ${origin.hwidParam})
-                            RETURNING id, subscription_id, origin_url, hwid, hwid_mode, hwid_param, created_at`) as Row[];
+                            RETURNING id, subscription_id, origin_url, hwid, hwid_mode, hwid_param, enabled, created_at`) as Row[];
       return mapOrigin(rows[0]!);
     });
   }
@@ -254,6 +257,29 @@ export class Store {
       await tx`DELETE FROM subscription_origins WHERE id = ${originId}`;
       return subId;
     });
+  }
+
+  /** Returns one origin owned by the user together with its subscription id. */
+  async getOrigin(userId: number, originId: number): Promise<{ origin: Origin; subscriptionId: number }> {
+    const rows = (await this.sql`
+      SELECT o.id, o.subscription_id, o.origin_url, o.hwid, o.hwid_mode, o.hwid_param, o.enabled, o.created_at
+      FROM subscription_origins o
+      JOIN subscriptions s ON s.id = o.subscription_id
+      WHERE o.id = ${originId} AND s.user_id = ${userId}`) as Row[];
+    const row = rows[0];
+    if (row === undefined) throw new NotFoundError();
+    return { origin: mapOrigin(row), subscriptionId: num(row.subscription_id) };
+  }
+
+  /** Enables or disables an origin owned by the user. */
+  async setOriginEnabled(userId: number, originId: number, enabled: boolean): Promise<void> {
+    const rows = (await this.sql`
+      UPDATE subscription_origins
+      SET enabled = ${enabled}
+      WHERE id = ${originId}
+        AND subscription_id IN (SELECT id FROM subscriptions WHERE user_id = ${userId})
+      RETURNING id`) as Row[];
+    if (rows.length === 0) throw new NotFoundError();
   }
 
   /**
@@ -305,7 +331,7 @@ export class Store {
   private async attachOrigins(subs: Subscription[]): Promise<void> {
     if (subs.length === 0) return;
     const ids = subs.map((s) => s.id);
-    const rows = (await this.sql`SELECT id, subscription_id, origin_url, hwid, hwid_mode, hwid_param, created_at
+    const rows = (await this.sql`SELECT id, subscription_id, origin_url, hwid, hwid_mode, hwid_param, enabled, created_at
                                  FROM subscription_origins
                                  WHERE subscription_id IN ${sqlList(ids)}
                                  ORDER BY id`) as Row[];

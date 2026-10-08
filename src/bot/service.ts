@@ -17,10 +17,12 @@ import {
   kbDeleteConfirm,
   kbLang,
   kbMenu,
+  kbOriginSettings,
   kbOrigins,
   kbSub,
   kbSubs,
   renderDevices,
+  renderOriginSettings,
   renderOrigins,
   renderOriginsScreen,
   renderSubDetail,
@@ -398,6 +400,14 @@ export class BotService {
       await this.actDevices(ctx, uid, lang, id);
       return;
     }
+    if ((id = parseId(CB.subOriginToggle, data)) > 0) {
+      await this.actToggleOrigin(ctx, uid, lang, id);
+      return;
+    }
+    if ((id = parseId(CB.subOriginSettings, data)) > 0) {
+      await this.actOriginSettings(ctx, uid, lang, id);
+      return;
+    }
     if ((id = parseId(CB.subOrigDelete, data)) > 0) {
       await this.actDeleteOrigin(ctx, uid, lang, id);
       return;
@@ -434,7 +444,7 @@ export class BotService {
 
     const signal = AbortSignal.timeout(this.cfg.originTimeoutMs);
     const lines: string[] = [];
-    for (const o of sub.origins) {
+    for (const o of sub.origins.filter((origin) => origin.enabled)) {
       const host = escapeHtml(defaultName(o.url));
       try {
         const res = await this.origin.fetch(o, signal);
@@ -453,6 +463,68 @@ export class BotService {
     await this.answer(ctx);
     this.startFlow(uid, { kind: "add_origin", subId: sub.id });
     await this.editHtml(ctx, t(lang, "origin.ask_url", escapeHtml(sub.name)), kbCancelFlow(lang));
+  }
+
+  /** Opens the settings screen of one origin. */
+  private async actOriginSettings(ctx: Context, uid: number, lang: string, originId: number): Promise<void> {
+    let loaded;
+    try {
+      loaded = await this.store.getOrigin(uid, originId);
+    } catch (err) {
+      await this.answer(ctx);
+      if (err instanceof NotFoundError) {
+        await this.editHtml(ctx, t(lang, "sub.not_found"), kbBack(lang));
+      } else {
+        log.error("bot: load origin failed", { id: originId, err });
+        await this.sendHtml(ctx, t(lang, "err.db"));
+      }
+      return;
+    }
+    await this.answer(ctx);
+    await this.editHtml(
+      ctx,
+      renderOriginSettings(loaded.origin, lang),
+      kbOriginSettings(loaded.origin, loaded.subscriptionId, lang),
+    );
+  }
+
+  /** Enables or disables one origin and re-renders its settings. */
+  private async actToggleOrigin(ctx: Context, uid: number, lang: string, originId: number): Promise<void> {
+    let loaded;
+    try {
+      loaded = await this.store.getOrigin(uid, originId);
+    } catch (err) {
+      await this.answer(ctx);
+      if (err instanceof NotFoundError) {
+        await this.editHtml(ctx, t(lang, "sub.not_found"), kbBack(lang));
+      } else {
+        log.error("bot: load origin failed", { id: originId, err });
+        await this.sendHtml(ctx, t(lang, "err.db"));
+      }
+      return;
+    }
+
+    const enabled = !loaded.origin.enabled;
+    try {
+      await this.store.setOriginEnabled(uid, originId, enabled);
+    } catch (err) {
+      await this.answer(ctx);
+      if (err instanceof NotFoundError) {
+        await this.editHtml(ctx, t(lang, "sub.not_found"), kbBack(lang));
+      } else {
+        log.error("bot: toggle origin failed", { id: originId, err });
+        await this.sendHtml(ctx, t(lang, "err.db"));
+      }
+      return;
+    }
+
+    await this.answer(ctx, t(lang, enabled ? "origin.enabled" : "origin.disabled"));
+    const origin = { ...loaded.origin, enabled };
+    await this.editHtml(
+      ctx,
+      renderOriginSettings(origin, lang),
+      kbOriginSettings(origin, loaded.subscriptionId, lang),
+    );
   }
 
   /** Removes one origin. A subscription keeps at least one. */

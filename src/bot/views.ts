@@ -20,7 +20,9 @@ export const CB = {
   subDelete: "sub:d:", // sub:d:<id>   -> confirm delete
   subDeleteDo: "sub:dc:", // sub:dc:<id>
   subOrigins: "sub:o:", // sub:o:<id>   -> origins screen
-  subOrigDelete: "sub:og:", // sub:og:<id>  -> delete origin <id>
+  subOriginSettings: "sub:or:", // sub:or:<id>  -> origin settings <origin id>
+  subOriginToggle: "sub:oe:", // sub:oe:<id>  -> enable/disable origin <origin id>
+  subOrigDelete: "sub:og:", // sub:og:<id>  -> delete origin <origin id>
   subOrigAdd: "sub:oa:", // sub:oa:<id>  -> add origin to subscription <id>
 } as const;
 
@@ -84,17 +86,24 @@ export function kbSub(id: number, lang: string): InlineKeyboard {
   ]);
 }
 
-/**
- * Lists the origins of a subscription with a delete button each, plus a button
- * to add another origin.
- */
+/** Lists the origins with a settings button each, plus add and back. */
 export function kbOrigins(sub: Subscription, lang: string): InlineKeyboard {
-  const rows: Button[][] = sub.origins.map((o, i) => [
-    { text: `🗑 ${i + 1}. ${defaultName(o.url)}`, data: `${CB.subOrigDelete}${o.id}` },
+  const rows: Button[][] = sub.origins.map((o) => [
+    { text: `${originStatusIcon(o)} ${defaultName(o.url)}`, data: `${CB.subOriginSettings}${o.id}` },
   ]);
   rows.push([{ text: t(lang, "btn.origin_add"), data: `${CB.subOrigAdd}${sub.id}` }]);
   rows.push([{ text: t(lang, "btn.back"), data: `${CB.sub}${sub.id}` }]);
   return kb(rows);
+}
+
+/** The settings keyboard of one origin: toggle, delete, back. */
+export function kbOriginSettings(origin: Origin, subId: number, lang: string): InlineKeyboard {
+  const toggle = origin.enabled ? t(lang, "btn.origin_disable") : t(lang, "btn.origin_enable");
+  return kb([
+    [{ text: toggle, data: `${CB.subOriginToggle}${origin.id}` }],
+    [{ text: t(lang, "btn.delete"), data: `${CB.subOrigDelete}${origin.id}` }],
+    [{ text: t(lang, "btn.back"), data: `${CB.subOrigins}${subId}` }],
+  ]);
 }
 
 /** Asks for a delete confirmation. */
@@ -136,12 +145,21 @@ export function renderOriginsScreen(sub: Subscription, lang: string): string {
   return `${t(lang, "origins.title", escapeHtml(sub.name), sub.origins.length)}\n\n${renderOrigins(sub.origins, lang)}`;
 }
 
-/** Lists origins with their URL, HWID and delivery mode. */
+/** Builds the settings message of one origin. */
+export function renderOriginSettings(origin: Origin, lang: string): string {
+  return t(
+    lang,
+    "origin.settings",
+    escapeHtml(origin.url),
+    renderMode(origin, lang),
+    renderStatus(origin, lang),
+  );
+}
+
+/** Lists origins with their URL, delivery mode and status (never the HWID). */
 export function renderOrigins(origins: Origin[], lang: string): string {
   return origins
-    .map((o) =>
-      t(lang, "origin.line", escapeHtml(o.url), escapeHtml(o.hwid), renderMode(o, lang)),
-    )
+    .map((o) => t(lang, "origin.line", escapeHtml(o.url), renderMode(o, lang), renderStatus(o, lang)))
     .join("\n\n");
 }
 
@@ -151,6 +169,16 @@ export function renderMode(o: Origin, lang: string): string {
     return t(lang, "sub.mode.query", escapeHtml(o.hwidParam));
   }
   return t(lang, "sub.mode.header", escapeHtml(o.hwidParam));
+}
+
+/** Localized on/off status of an origin. */
+export function renderStatus(o: Origin, lang: string): string {
+  return o.enabled ? t(lang, "origin.status_on") : t(lang, "origin.status_off");
+}
+
+/** Icon shown next to an origin in buttons. */
+export function originStatusIcon(o: Origin): string {
+  return o.enabled ? "✅" : "⏸";
 }
 
 /** Builds the public link served on our domain. */
