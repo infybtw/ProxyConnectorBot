@@ -19,7 +19,7 @@ Telegram-бот и HTTP-прокси для VPN-подписок (Happ/INCY) с 
 т.п.) отклоняют запросы подписки без `x-hwid`. У Happ есть также «HWID-ссылки»,
 где HWID зашит в query-параметр URL.
 
-Поэтому для каждой подписки хранится способ передачи:
+Поэтому для каждого origin хранится способ передачи:
 
 | Режим      | Что отправляется провайдеру             | Когда используется                          |
 | ---------- | --------------------------------------- | ------------------------------------------- |
@@ -29,9 +29,8 @@ Telegram-бот и HTTP-прокси для VPN-подписок (Happ/INCY) с 
 - При добавлении режим выбирается автоматически: если origin-URL уже содержит
   параметр с `hwid` в имени — используется query-режим с этим же именем,
   иначе — header-режим.
-- Режим определяется автоматически при добавлении подписки (см. выше).
 - Формат HWID — uppercase UUID (`8-4-4-4-12`), как у INCY. Генерируется один
-  раз при создании подписки и хранится в базе.
+  раз при создании origin и хранится в базе.
 
 Помимо HWID провайдеру уходят стабильные device-заголовки
 (`x-device-os`, `x-ver-os`, `x-device-model`) и User-Agent — всё настраивается
@@ -39,22 +38,31 @@ Telegram-бот и HTTP-прокси для VPN-подписок (Happ/INCY) с 
 
 ## Стек
 
-- [fiber](https://github.com/gofiber/fiber) — HTTP-сервер (эндпоинт подписок)
-- [GoGramm](https://github.com/infybtw/GoGramm) — Telegram Bot API (long polling)
-- Postgres — хранение пользователей, подписок и HWID
+- [Bun](https://bun.sh) — рантайм, менеджер пакетов и тест-раннер (TypeScript без сборки)
+- [Elysia](https://elysiajs.com) — HTTP-сервер (эндпоинт подписок)
+- [grammY](https://grammy.dev) — Telegram Bot API (long polling)
+- [Bun SQL](https://bun.sh/docs/runtime/sql) — Postgres из коробки (`bun.SQL`)
+- Postgres — хранение пользователей, подписок, HWID и устройств
 - Caddy — reverse proxy и HTTPS
 - Docker Compose — dev- и prod-окружение
 
 ## Структура
 
 ```
-cmd/pcb/main.go              — точка входа (бот + HTTP + graceful shutdown)
-internal/config/             — конфигурация из окружения
-internal/store/              — Postgres + миграции (embed SQL)
-internal/origin/             — запросы к провайдеру с подстановкой HWID
-internal/web/                — fiber: GET /s/:token, GET /healthz
-internal/botapp/             — Telegram-бот: команды, кнопки, сценарии
-internal/i18n/               — локализация ru/en (embed JSON)
+src/index.ts           — точка входа (бот + HTTP + graceful shutdown)
+src/config.ts          — конфигурация из окружения
+src/migrate.ts         — раннер рукописных SQL-миграций
+src/migrations/*.sql   — миграции (NNNN_name.sql)
+src/store.ts           — Postgres через bun.SQL
+src/origin.ts          — запросы к провайдеру с подстановкой HWID
+src/merge.ts           — склейка нескольких подписок
+src/hwid.ts            — генерация HWID
+src/url.ts             — URL-хелперы (режим HWID, имя по умолчанию)
+src/web.ts             — Elysia: GET /s/:token, GET /healthz
+src/bot/service.ts     — Telegram-бот: команды, кнопки, сценарии
+src/bot/views.ts       — клавиатуры и тексты бота
+src/i18n/              — локализация ru/en
+tests/                 — bun test: unit + интеграционные
 Dockerfile, docker-compose*.yml, Caddyfile*  — dev/prod-окружение
 ```
 
@@ -67,16 +75,17 @@ cp .env.example .env
 docker compose -f docker-compose.dev.yml up --build
 ```
 
-Dev-стек поднимает Postgres (`localhost:5433`), приложение и Caddy с
-**внутренним** сертификатом (`local_certs`) для `APP_DOMAIN` (по умолчанию
-`pcb.localhost`). Добавь домен в `/etc/hosts` → `127.0.0.1`, если он не
-резолвится сам, и открой `https://pcb.localhost/healthz`.
+Dev-стек поднимает Postgres (`localhost:5433`), приложение и Caddy на
+`http://localhost:8080`. Открой `http://localhost:8080/healthz`.
 
-Локальный запуск без Docker (нужен только Postgres и env-переменные):
+Локальный запуск без Docker (Bun сам подхватывает `.env`; нужен только Postgres):
 
 ```bash
-go run ./cmd/pcb
+bun install
+bun run src/index.ts
 ```
+
+При старте автоматически применяются миграции из `src/migrations`.
 
 ## Прод
 
@@ -91,14 +100,28 @@ docker compose -f docker-compose.yml up -d --build
 `APP_DOMAIN` должен уже указывать на сервер: Caddy сам получит сертификат
 Let's Encrypt и проксирует трафик на приложение.
 
+## Разработка
+
+| Команда              | Действие                                   |
+| -------------------- | ------------------------------------------ |
+| `bun install`        | установить зависимости                     |
+| `bun run dev`        | запуск с авто-перезагрузкой (`--watch`)    |
+| `bun run typecheck`  | проверка типов (`tsc --noEmit`)            |
+| `bun test`           | unit-тесты                                 |
+| `TEST_DATABASE_URL=... bun test` | unit + интеграционные тесты    |
+
+Интеграционные тесты (`tests/integration.test.ts`) **пропускаются** без
+`TEST_DATABASE_URL`. Если переменная задана, они мигрируют указанную БД и
+создают/удаляют свои строки — укажи одноразовый Postgres.
+
 ## Релиз (GitHub Actions → GHCR)
 
-CI запускается на теги, начинающиеся с `v` (например `v1.0.0`), и состоит из
-двух отдельных джобов:
+CI запускается на pull request (проверка: typecheck + тесты) и на теги,
+начинающиеся с `v` (сборка и публикация образа):
 
-1. **build** — собирает Docker-образ и сохраняет его артефактом.
-2. **push** — загружает артефакт и пушит его в GitHub Container Registry:
-   сначала образ с версией из тега (`v1.0.0`), затем `latest`.
+1. **check** — `bun run typecheck` и `bun test`.
+2. **build** — собирает Docker-образ и сохраняет его артефактом (только теги).
+3. **push** — пушит образ в GHCR: сначала тег версии (`v1.0.0`), затем `latest`.
 
 ```bash
 git tag v1.0.0
@@ -111,9 +134,6 @@ git push origin v1.0.0
 ghcr.io/<owner>/<repo>:v1.0.0
 ghcr.io/<owner>/<repo>:latest
 ```
-
-Имя образа приводится к нижнему регистру автоматически. Пуш использует
-встроенный `GITHUB_TOKEN` с правом `packages: write`, отдельные секреты не нужны.
 
 ## Переменные окружения
 
@@ -130,7 +150,9 @@ ghcr.io/<owner>/<repo>:latest
 | `HWID_VER_OS`        | нет         | `14`                       | значение `x-ver-os`                                 |
 | `HWID_DEVICE_MODEL`  | нет         | `Pixel 7`                  | значение `x-device-model`                           |
 | `ORIGIN_USER_AGENT`  | нет         | `Happ/2.4.1 (Android 14)`  | User-Agent запросов к провайдеру                    |
-| `ORIGIN_TIMEOUT`     | нет         | `20s`                      | таймаут запроса к провайдеру                        |
+| `ORIGIN_TIMEOUT`     | нет         | `20s`                      | таймаут запроса к провайдеру (формат Go: `20s`)     |
+| `ORIGIN_MAX_BODY`    | нет         | `20971520`                 | максимальный размер тела подписки, в байтах         |
+| `LOG_LEVEL`          | нет         | `info`                     | уровень логов (`debug`/`info`/`warn`/`error`)       |
 
 ## Бот
 
@@ -192,6 +214,9 @@ base64) следует за ответами провайдеров; `subscripti
 
 - Состояния сценариев (ожидание URL, названия и т.д.) живут в памяти процесса
   и сбрасываются при рестарте — данные подписок при этом не теряются.
-- HWID генерируется один раз при создании подписки и больше не меняется.
+- HWID генерируется один раз при создании origin и больше не меняется.
 - Сервис не переписывает содержимое подписки: провайдер получает один и тот же
   HWID при каждом обновлении, а приложение получает исходный ответ провайдера.
+- Миграции — обычные `NNNN_name.sql` в `src/migrations`. Применённые миграции
+  записываются в `schema_migrations`; не редактируй уже применённую миграцию —
+  контрольных сумм нет, поэтому она не выполнится повторно.

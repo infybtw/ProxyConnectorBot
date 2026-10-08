@@ -1,7 +1,7 @@
-# Binaries and build artifacts
-/bin/
-/dist/
-/pcb
+# Bun
+node_modules/
+.bun/
+bun.lockb
 
 # Environment
 .env
@@ -14,5 +14,5 @@
 .DS_Store
 
 # Test artifacts
+coverage/
 *.out
-*.test

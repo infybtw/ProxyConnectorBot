@@ -4,8 +4,9 @@ on:
   push:
     tags:
       - 'v*'
+  pull_request:
 
-# Only one release run per tag at a time.
+# Only one run per ref at a time.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -14,9 +15,34 @@ permissions:
   contents: read
 
 jobs:
+  # Typecheck and unit tests. Runs on tags and pull requests.
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Test
+        run: bun test
+
   # Build the Docker image and hand it to the push job as an artifact.
+  # Releases only: tags starting with v.
   build:
     name: Build
+    needs: check
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -51,6 +77,7 @@ jobs:
   push:
     name: Push
     needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -23,16 +23,9 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set TELEGRAM_BOT_TOKEN in .env}
       DATABASE_URL: postgres://${POSTGRES_USER:-pcb}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-pcb}?sslmode=disable
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL in .env}
-      HTTP_ADDR: ":8080"
-      DEFAULT_LOCALE: ${DEFAULT_LOCALE:-ru}
-      HWID_DEVICE_OS: ${HWID_DEVICE_OS:-android}
-      HWID_VER_OS: ${HWID_VER_OS:-14}
-      HWID_DEVICE_MODEL: ${HWID_DEVICE_MODEL:-Pixel 7}
-      ORIGIN_USER_AGENT: ${ORIGIN_USER_AGENT:-Happ/2.4.1 (Android 14)}
-      ORIGIN_TIMEOUT: ${ORIGIN_TIMEOUT:-20s}
+    env_file:
+      .env
     depends_on:
       db:
         condition: service_healthy

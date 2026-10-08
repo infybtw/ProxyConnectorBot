@@ -4,6 +4,5 @@
 .env
 .env.*
 *.md
-bin/
-dist/
-/tmp/
+node_modules/
+tests/

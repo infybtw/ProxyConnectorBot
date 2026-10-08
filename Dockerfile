@@ -1,17 +1,18 @@
-# Builds the ProxyConnectorBot binary and packages it into a small runtime image.
+# Builds and runs the ProxyConnectorBot on Bun (TypeScript, no build step).
 
-FROM golang:1.27-alpine AS build
-WORKDIR /src
+FROM oven/bun:1.4-alpine AS deps
+WORKDIR /app
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile --production
 
-COPY go.mod go.sum ./
-RUN go mod download
+FROM oven/bun:1.4-alpine
+WORKDIR /app
+ENV NODE_ENV=production
 
-COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/pcb ./cmd/pcb
-
-FROM alpine:3.21
-RUN apk add --no-cache ca-certificates tzdata
-COPY --from=build /out/pcb /usr/local/bin/pcb
+COPY --from=deps /app/node_modules ./node_modules
+COPY package.json bun.lock ./
+COPY src ./src
 
 EXPOSE 8080
-ENTRYPOINT ["pcb"]
+USER bun
+ENTRYPOINT ["bun", "run", "src/index.ts"]
