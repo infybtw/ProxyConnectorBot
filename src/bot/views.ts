@@ -156,11 +156,11 @@ export function renderOriginSettings(origin: Origin, lang: string): string {
   );
 }
 
-/** Lists origins with their URL, delivery mode and status (never the HWID). */
+/** Lists origins as "N. host - status" (never the HWID or full URL). */
 export function renderOrigins(origins: Origin[], lang: string): string {
   return origins
-    .map((o) => t(lang, "origin.line", escapeHtml(o.url), renderMode(o, lang), renderStatus(o, lang)))
-    .join("\n\n");
+    .map((o, i) => t(lang, "origin.line", i + 1, escapeHtml(defaultName(o.url)), renderStatus(o, lang)))
+    .join("\n");
 }
 
 /** Describes how the HWID is passed to the origin. */
