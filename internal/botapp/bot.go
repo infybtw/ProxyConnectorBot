@@ -19,9 +19,10 @@ import (
 
 // Interactive flow kinds (in-memory, per user).
 const (
-	flowAddURL  = "add_url"
-	flowAddName = "add_name"
-	flowRename  = "rename"
+	flowAddURL    = "add_url"
+	flowAddName   = "add_name"
+	flowRename    = "rename"
+	flowAddOrigin = "add_origin"
 )
 
 // flow is the state of an interactive multi-step action.

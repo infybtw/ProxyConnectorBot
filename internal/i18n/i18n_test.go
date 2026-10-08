@@ -3,8 +3,8 @@ package i18n
 import "testing"
 
 func TestTReplacesPlaceholders(t *testing.T) {
-	got := T(LangRU, "sub.test_ok", 200, 42, "text/plain")
-	want := "✅ Origin ответил: HTTP 200, 42 байт.\nContent-Type: <code>text/plain</code>"
+	got := T(LangRU, "sub.test_origin_ok", "example.com", 200, 42)
+	want := "✅ example.com: HTTP 200, 42 байт"
 	if got != want {
 		t.Fatalf("T() = %q, want %q", got, want)
 	}

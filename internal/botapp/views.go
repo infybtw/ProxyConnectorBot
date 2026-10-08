@@ -38,6 +38,9 @@ const (
 	cbSubRename   = "sub:ren:" // sub:ren:<id>
 	cbSubDelete   = "sub:d:"   // sub:d:<id>   -> confirm delete
 	cbSubDeleteDo = "sub:dc:"  // sub:dc:<id>
+	cbSubOrigins  = "sub:o:"   // sub:o:<id>   -> origins screen
+	cbSubOrigDel  = "sub:og:"  // sub:og:<id>  -> delete origin <id>
+	cbSubOrigAdd  = "sub:oa:"  // sub:oa:<id>  -> add origin to subscription <id>
 )
 
 // kbMenu is the main menu keyboard.
@@ -88,12 +91,27 @@ func kbSub(id int64, lang string) *api.InlineKeyboardMarkup {
 			inlineButton(i18n.T(lang, "btn.test"), fmt.Sprintf("%s%d", cbSubTest, id)),
 			inlineButton(i18n.T(lang, "btn.devices"), fmt.Sprintf("%s%d", cbSubDevices, id)),
 		},
+		[]api.InlineKeyboardButton{inlineButton(i18n.T(lang, "btn.origins"), fmt.Sprintf("%s%d", cbSubOrigins, id))},
 		[]api.InlineKeyboardButton{
 			inlineButton(i18n.T(lang, "btn.rename"), fmt.Sprintf("%s%d", cbSubRename, id)),
 			inlineButton(i18n.T(lang, "btn.delete"), fmt.Sprintf("%s%d", cbSubDelete, id)),
 		},
 		[]api.InlineKeyboardButton{inlineButton(i18n.T(lang, "btn.back"), cbSubs)},
 	)
+}
+
+// kbOrigins lists the origins of a subscription with a delete button each,
+// plus a button to add another origin.
+func kbOrigins(sub store.Subscription, lang string) *api.InlineKeyboardMarkup {
+	rows := make([][]api.InlineKeyboardButton, 0, len(sub.Origins)+2)
+	for i, o := range sub.Origins {
+		rows = append(rows, []api.InlineKeyboardButton{
+			inlineButton(fmt.Sprintf("🗑 %d. %s", i+1, defaultName(o.URL)), fmt.Sprintf("%s%d", cbSubOrigDel, o.ID)),
+		})
+	}
+	rows = append(rows, []api.InlineKeyboardButton{inlineButton(i18n.T(lang, "btn.origin_add"), fmt.Sprintf("%s%d", cbSubOrigAdd, sub.ID))})
+	rows = append(rows, []api.InlineKeyboardButton{inlineButton(i18n.T(lang, "btn.back"), fmt.Sprintf("%s%d", cbSub, sub.ID))})
+	return gogramInlineKeyboard(rows...)
 }
 
 // kbDeleteConfirm asks for a delete confirmation.
@@ -124,19 +142,37 @@ func renderSubDetail(sub store.Subscription, lang, baseURL string) string {
 	return i18n.T(lang, "sub.detail",
 		html.EscapeString(sub.Name),
 		subscriptionLink(baseURL, sub.Token),
-		html.EscapeString(sub.OriginURL),
-		html.EscapeString(sub.HWID),
-		renderMode(sub, lang),
+		len(sub.Origins),
+		renderOrigins(sub.Origins, lang),
 		sub.CreatedAt.Format(i18n.T(lang, "time.format")),
 	)
 }
 
-// renderMode describes how the HWID is passed to the origin.
-func renderMode(sub store.Subscription, lang string) string {
-	if sub.HWIDMode == store.HWIDModeQuery {
-		return i18n.T(lang, "sub.mode.query", html.EscapeString(sub.HWIDParam))
+// renderOriginsScreen builds the message listing the origins of a subscription.
+func renderOriginsScreen(sub store.Subscription, lang string) string {
+	return i18n.T(lang, "origins.title", html.EscapeString(sub.Name), len(sub.Origins)) +
+		"\n\n" + renderOrigins(sub.Origins, lang)
+}
+
+// renderOrigins lists origins with their URL, HWID and delivery mode.
+func renderOrigins(origins []store.Origin, lang string) string {
+	lines := make([]string, 0, len(origins))
+	for _, o := range origins {
+		lines = append(lines, i18n.T(lang, "origin.line",
+			html.EscapeString(o.URL),
+			html.EscapeString(o.HWID),
+			renderMode(o, lang),
+		))
 	}
-	return i18n.T(lang, "sub.mode.header", html.EscapeString(sub.HWIDParam))
+	return strings.Join(lines, "\n\n")
+}
+
+// renderMode describes how the HWID is passed to the origin.
+func renderMode(o store.Origin, lang string) string {
+	if o.HWIDMode == store.HWIDModeQuery {
+		return i18n.T(lang, "sub.mode.query", html.EscapeString(o.HWIDParam))
+	}
+	return i18n.T(lang, "sub.mode.header", html.EscapeString(o.HWIDParam))
 }
 
 // subscriptionLink builds the public link served on our domain.

@@ -3,7 +3,9 @@ package botapp
 import (
 	"context"
 	"errors"
+	"html"
 	"log/slog"
+	"strings"
 
 	gogram "github.com/infybtw/GoGramm"
 
@@ -99,6 +101,23 @@ func (b *Bot) dispatchSubCallback(c *gogram.Context, uid int64, lang, data strin
 		id, _ := parseID(cbSubDevices, data)
 		b.actDevices(c, uid, lang, id)
 
+	case hasPrefixAndID(cbSubOrigDel, data):
+		id, _ := parseID(cbSubOrigDel, data)
+		b.actDeleteOrigin(c, uid, lang, id)
+
+	case hasPrefixAndID(cbSubOrigAdd, data):
+		id, _ := parseID(cbSubOrigAdd, data)
+		b.actAddOriginStart(c, uid, lang, id)
+
+	case hasPrefixAndID(cbSubOrigins, data):
+		id, _ := parseID(cbSubOrigins, data)
+		sub, ok := b.loadSub(c, uid, lang, id)
+		if !ok {
+			return
+		}
+		answerCallback(c, "", false)
+		editHTML(c, renderOriginsScreen(sub, lang), kbOrigins(sub, lang))
+
 	case hasPrefixAndID(cbSub, data):
 		id, _ := parseID(cbSub, data)
 		sub, ok := b.loadSub(c, uid, lang, id)
@@ -113,8 +132,8 @@ func (b *Bot) dispatchSubCallback(c *gogram.Context, uid int64, lang, data strin
 	}
 }
 
-// actTest fetches the subscription from origin with the stored HWID and
-// reports the outcome.
+// actTest fetches every origin of the subscription with its HWID and reports
+// the outcome of each one.
 func (b *Bot) actTest(c *gogram.Context, uid int64, lang string, id int64) {
 	sub, ok := b.loadSub(c, uid, lang, id)
 	if !ok {
@@ -124,12 +143,56 @@ func (b *Bot) actTest(c *gogram.Context, uid int64, lang string, id int64) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), b.cfg.OriginTimeout)
 	defer cancel()
-	res, err := b.origin.Fetch(ctx, sub)
-	if err != nil {
-		sendHTML(c, i18n.T(lang, "sub.test_fail", err.Error()), kbSub(id, lang))
+	lines := make([]string, 0, len(sub.Origins))
+	for _, o := range sub.Origins {
+		host := html.EscapeString(defaultName(o.URL))
+		res, err := b.origin.Fetch(ctx, o)
+		if err != nil {
+			lines = append(lines, i18n.T(lang, "sub.test_origin_fail", host, html.EscapeString(err.Error())))
+			continue
+		}
+		lines = append(lines, i18n.T(lang, "sub.test_origin_ok", host, res.StatusCode, len(res.Body)))
+	}
+	sendHTML(c, i18n.T(lang, "sub.test_result", html.EscapeString(sub.Name), strings.Join(lines, "\n")), kbSub(id, lang))
+}
+
+// actAddOriginStart asks for the URL of one more origin of the subscription.
+func (b *Bot) actAddOriginStart(c *gogram.Context, uid int64, lang string, id int64) {
+	sub, ok := b.loadSub(c, uid, lang, id)
+	if !ok {
 		return
 	}
-	sendHTML(c, i18n.T(lang, "sub.test_ok", res.StatusCode, len(res.Body), res.Header.Get("Content-Type")), kbSub(id, lang))
+	answerCallback(c, "", false)
+	b.startFlow(uid, &flow{kind: flowAddOrigin, subID: sub.ID})
+	editHTML(c, i18n.T(lang, "origin.ask_url", html.EscapeString(sub.Name)), kbCancelFlow(lang))
+}
+
+// actDeleteOrigin removes one origin. A subscription keeps at least one.
+func (b *Bot) actDeleteOrigin(c *gogram.Context, uid int64, lang string, originID int64) {
+	subID, err := b.store.DeleteOrigin(context.Background(), uid, originID)
+	switch {
+	case errors.Is(err, store.ErrLastOrigin):
+		answerCallback(c, i18n.T(lang, "origin.last"), true)
+		return
+	case errors.Is(err, store.ErrNotFound):
+		answerCallback(c, "", false)
+		editHTML(c, i18n.T(lang, "sub.not_found"), kbBack(lang))
+		return
+	case err != nil:
+		slog.Error("bot: delete origin failed", "id", originID, "err", err)
+		answerCallback(c, "", false)
+		sendHTML(c, i18n.T(lang, "err.db"), nil)
+		return
+	}
+
+	sub, err := b.store.GetSubscription(context.Background(), uid, subID)
+	if err != nil {
+		answerCallback(c, "", false)
+		sendHTML(c, i18n.T(lang, "err.db"), nil)
+		return
+	}
+	answerCallback(c, i18n.T(lang, "origin.deleted"), false)
+	editHTML(c, renderOriginsScreen(sub, lang), kbOrigins(sub, lang))
 }
 
 // actDevices lists the devices that fetched the subscription.

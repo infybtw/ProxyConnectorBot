@@ -3,6 +3,7 @@ package botapp
 import (
 	"context"
 	"errors"
+	"html"
 	"log/slog"
 	"net/url"
 	"strings"
@@ -106,6 +107,8 @@ func (b *Bot) onMessage(c *gogram.Context) error {
 		return b.flowAddName(c, id, lang, text)
 	case flowRename:
 		return b.flowRename(c, id, lang, text)
+	case flowAddOrigin:
+		return b.flowAddOrigin(c, id, lang, text)
 	default:
 		b.clearFlow(id)
 		sendHTML(c, i18n.T(lang, "flow.unknown"), kbMenu(lang))
@@ -172,12 +175,14 @@ func (b *Bot) createSubscription(c *gogram.Context, uid int64, lang string, f *f
 		return
 	}
 	sub := &store.Subscription{
-		UserID:    uid,
-		Name:      name,
-		OriginURL: f.url,
-		HWID:      generated,
-		HWIDMode:  f.hwidMode,
-		HWIDParam: f.hwidParam,
+		UserID: uid,
+		Name:   name,
+		Origins: []store.Origin{{
+			URL:       f.url,
+			HWID:      generated,
+			HWIDMode:  f.hwidMode,
+			HWIDParam: f.hwidParam,
+		}},
 	}
 	if err := b.store.CreateSubscription(context.Background(), sub); err != nil {
 		slog.Error("bot: create subscription failed", "err", err)
@@ -185,11 +190,46 @@ func (b *Bot) createSubscription(c *gogram.Context, uid int64, lang string, f *f
 		return
 	}
 	sendHTML(c, i18n.T(lang, "add.created",
-		name,
+		html.EscapeString(name),
 		subscriptionLink(b.cfg.PublicBaseURL, sub.Token),
-		sub.HWID,
-		renderMode(*sub, lang),
+		renderOrigins(sub.Origins, lang),
 	), kbSub(sub.ID, lang))
+}
+
+// flowAddOrigin attaches one more origin to the subscription of the flow.
+func (b *Bot) flowAddOrigin(c *gogram.Context, uid int64, lang, text string) error {
+	rawURL := strings.TrimSpace(text)
+	if !origin.IsHTTPURL(rawURL) {
+		sendHTML(c, i18n.T(lang, "add.invalid_url"), kbCancelFlow(lang))
+		return nil
+	}
+	f := b.takeFlow(uid)
+	if f == nil {
+		return nil
+	}
+	generated, err := hwid.Generate()
+	if err != nil {
+		slog.Error("bot: hwid generation failed", "err", err)
+		sendHTML(c, i18n.T(lang, "err.generic"), kbMenu(lang))
+		return err
+	}
+	mode, param := detectHWIDMode(rawURL)
+	o := &store.Origin{URL: rawURL, HWID: generated, HWIDMode: mode, HWIDParam: param}
+	if err := b.store.AddOrigin(context.Background(), uid, f.subID, o); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			sendHTML(c, i18n.T(lang, "sub.not_found"), kbMenu(lang))
+			return nil
+		}
+		sendHTML(c, i18n.T(lang, "err.db"), kbMenu(lang))
+		return err
+	}
+	sub, err := b.store.GetSubscription(context.Background(), uid, f.subID)
+	if err != nil {
+		sendHTML(c, i18n.T(lang, "err.db"), kbMenu(lang))
+		return err
+	}
+	sendHTML(c, i18n.T(lang, "origin.added")+"\n\n"+renderOriginsScreen(sub, lang), kbOrigins(sub, lang))
+	return nil
 }
 
 // flowRename saves a new subscription name.

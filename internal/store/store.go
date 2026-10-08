@@ -35,17 +35,26 @@ type User struct {
 	Lang string
 }
 
-// Subscription is a provider subscription proxied through our domain.
+// Subscription is a public subscription proxied through our domain. It is
+// served from one or more origins, each with its own HWID.
 type Subscription struct {
 	ID        int64
 	UserID    int64
 	Name      string
-	OriginURL string
-	HWID      string
-	HWIDMode  string
-	HWIDParam string
 	Token     string
 	CreatedAt time.Time
+	Origins   []Origin
+}
+
+// Origin is a provider subscription URL bound to a HWID.
+type Origin struct {
+	ID             int64
+	SubscriptionID int64
+	URL            string
+	HWID           string
+	HWIDMode       string
+	HWIDParam      string
+	CreatedAt      time.Time
 }
 
 // Store wraps a pgx connection pool.
@@ -146,28 +155,47 @@ func (s *Store) SetLang(ctx context.Context, tgID int64, lang string) error {
 	return nil
 }
 
-// CreateSubscription inserts a new subscription with a fresh public token.
+// CreateSubscription inserts a subscription with a fresh public token and its
+// origins in one transaction.
 func (s *Store) CreateSubscription(ctx context.Context, sub *Subscription) error {
 	token, err := newToken()
 	if err != nil {
 		return err
 	}
 	sub.Token = token
-	err = s.pool.QueryRow(ctx, `
-		INSERT INTO subscriptions (user_id, name, origin_url, hwid, hwid_mode, hwid_param, token)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		RETURNING id`, sub.UserID, sub.Name, sub.OriginURL, sub.HWID, sub.HWIDMode, sub.HWIDParam, sub.Token).
-		Scan(&sub.ID)
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("store: begin create subscription: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	err = tx.QueryRow(ctx, `
+		INSERT INTO subscriptions (user_id, name, token)
+		VALUES ($1, $2, $3)
+		RETURNING id, created_at`, sub.UserID, sub.Name, sub.Token).
+		Scan(&sub.ID, &sub.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("store: create subscription: %w", err)
+	}
+	for i := range sub.Origins {
+		o := &sub.Origins[i]
+		o.SubscriptionID = sub.ID
+		if err := insertOrigin(ctx, tx, o); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("store: commit create subscription: %w", err)
 	}
 	return nil
 }
 
-// ListSubscriptions returns all subscriptions of the user, newest first.
+// ListSubscriptions returns all subscriptions of the user, newest first, with
+// their origins.
 func (s *Store) ListSubscriptions(ctx context.Context, userID int64) ([]Subscription, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, user_id, name, origin_url, hwid, hwid_mode, hwid_param, token, created_at
+		SELECT id, user_id, name, token, created_at
 		FROM subscriptions WHERE user_id = $1
 		ORDER BY id DESC`, userID)
 	if err != nil {
@@ -178,45 +206,59 @@ func (s *Store) ListSubscriptions(ctx context.Context, userID int64) ([]Subscrip
 	var out []Subscription
 	for rows.Next() {
 		var sub Subscription
-		if err := rows.Scan(&sub.ID, &sub.UserID, &sub.Name, &sub.OriginURL, &sub.HWID, &sub.HWIDMode, &sub.HWIDParam, &sub.Token, &sub.CreatedAt); err != nil {
+		if err := rows.Scan(&sub.ID, &sub.UserID, &sub.Name, &sub.Token, &sub.CreatedAt); err != nil {
 			return nil, fmt.Errorf("store: scan subscription: %w", err)
 		}
 		out = append(out, sub)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := s.attachOrigins(ctx, out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
-// GetSubscription returns one subscription owned by the user.
+// GetSubscription returns one subscription owned by the user, with origins.
 func (s *Store) GetSubscription(ctx context.Context, userID, id int64) (Subscription, error) {
 	var sub Subscription
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, user_id, name, origin_url, hwid, hwid_mode, hwid_param, token, created_at
+		SELECT id, user_id, name, token, created_at
 		FROM subscriptions WHERE user_id = $1 AND id = $2`, userID, id).
-		Scan(&sub.ID, &sub.UserID, &sub.Name, &sub.OriginURL, &sub.HWID, &sub.HWIDMode, &sub.HWIDParam, &sub.Token, &sub.CreatedAt)
+		Scan(&sub.ID, &sub.UserID, &sub.Name, &sub.Token, &sub.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Subscription{}, ErrNotFound
 	}
 	if err != nil {
 		return Subscription{}, fmt.Errorf("store: get subscription: %w", err)
 	}
-	return sub, nil
+	subs := []Subscription{sub}
+	if err := s.attachOrigins(ctx, subs); err != nil {
+		return Subscription{}, err
+	}
+	return subs[0], nil
 }
 
 // GetByToken returns a subscription by its public token (no ownership check,
-// used by the HTTP endpoint).
+// used by the HTTP endpoint), with origins.
 func (s *Store) GetByToken(ctx context.Context, token string) (Subscription, error) {
 	var sub Subscription
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, user_id, name, origin_url, hwid, hwid_mode, hwid_param, token
+		SELECT id, user_id, name, token, created_at
 		FROM subscriptions WHERE token = $1`, token).
-		Scan(&sub.ID, &sub.UserID, &sub.Name, &sub.OriginURL, &sub.HWID, &sub.HWIDMode, &sub.HWIDParam, &sub.Token)
+		Scan(&sub.ID, &sub.UserID, &sub.Name, &sub.Token, &sub.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Subscription{}, ErrNotFound
 	}
 	if err != nil {
 		return Subscription{}, fmt.Errorf("store: get by token: %w", err)
 	}
-	return sub, nil
+	subs := []Subscription{sub}
+	if err := s.attachOrigins(ctx, subs); err != nil {
+		return Subscription{}, err
+	}
+	return subs[0], nil
 }
 
 // DeleteSubscription removes a subscription owned by the user.

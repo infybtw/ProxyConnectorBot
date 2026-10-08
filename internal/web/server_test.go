@@ -59,12 +59,14 @@ func TestSubscriptionPassthrough(t *testing.T) {
 	}
 
 	sub := &store.Subscription{
-		UserID:    userID,
-		Name:      "it-test",
-		OriginURL: originSrv.URL,
-		HWID:      wantHWID,
-		HWIDMode:  store.HWIDModeHeader,
-		HWIDParam: "x-hwid",
+		UserID: userID,
+		Name:   "it-test",
+		Origins: []store.Origin{{
+			URL:       originSrv.URL,
+			HWID:      wantHWID,
+			HWIDMode:  store.HWIDModeHeader,
+			HWIDParam: "x-hwid",
+		}},
 	}
 	if err := st.CreateSubscription(ctx, sub); err != nil {
 		t.Fatalf("create subscription: %v", err)

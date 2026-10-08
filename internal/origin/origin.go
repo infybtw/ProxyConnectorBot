@@ -54,19 +54,19 @@ func NewClient(timeout time.Duration, maxLen int64, device Device) *Client {
 	}
 }
 
-// Fetch requests the subscription from originURL, attaching hwid according to
-// the subscription's delivery mode (header or query parameter) plus stable
+// Fetch requests the subscription from the origin URL, attaching the origin's
+// HWID according to its delivery mode (header or query parameter) plus stable
 // device headers expected by Happ/INCY style panels.
-func (c *Client) Fetch(ctx context.Context, sub store.Subscription) (*Result, error) {
-	target, err := url.Parse(sub.OriginURL)
+func (c *Client) Fetch(ctx context.Context, o store.Origin) (*Result, error) {
+	target, err := url.Parse(o.URL)
 	if err != nil {
 		return nil, fmt.Errorf("origin: parse url: %w", err)
 	}
 
-	switch sub.HWIDMode {
+	switch o.HWIDMode {
 	case store.HWIDModeQuery:
 		q := target.Query()
-		q.Set(sub.HWIDParam, sub.HWID)
+		q.Set(o.HWIDParam, o.HWID)
 		target.RawQuery = q.Encode()
 	default:
 		target.RawQuery = target.Query().Encode()
@@ -77,8 +77,8 @@ func (c *Client) Fetch(ctx context.Context, sub store.Subscription) (*Result, er
 		return nil, fmt.Errorf("origin: build request: %w", err)
 	}
 
-	if sub.HWIDMode != store.HWIDModeQuery {
-		req.Header.Set(sub.HWIDParam, sub.HWID)
+	if o.HWIDMode != store.HWIDModeQuery {
+		req.Header.Set(o.HWIDParam, o.HWID)
 	}
 	req.Header.Set("x-device-os", c.device.OS)
 	req.Header.Set("x-ver-os", c.device.OSVersion)

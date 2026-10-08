@@ -3,7 +3,7 @@ package botapp
 import "testing"
 
 // TestKbSubOnlyHasCoreActions locks the user-facing subscription card down to
-// test, rename and delete.
+// test, devices, origins, rename and delete.
 func TestKbSubOnlyHasCoreActions(t *testing.T) {
 	kb := kbSub(5, "ru")
 
@@ -17,7 +17,7 @@ func TestKbSubOnlyHasCoreActions(t *testing.T) {
 		}
 	}
 
-	want := []string{"sub:t:5", "sub:dev:5", "sub:ren:5", "sub:d:5", "subs"}
+	want := []string{"sub:t:5", "sub:dev:5", "sub:o:5", "sub:ren:5", "sub:d:5", "subs"}
 	if len(got) != len(want) {
 		t.Fatalf("buttons = %v, want %v", got, want)
 	}

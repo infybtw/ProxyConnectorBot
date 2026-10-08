@@ -7,10 +7,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"log/slog"
+	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/gofiber/fiber/v3"
 
+	"github.com/infybtw/ProxyConnectorBot/internal/merge"
 	"github.com/infybtw/ProxyConnectorBot/internal/origin"
 	"github.com/infybtw/ProxyConnectorBot/internal/store"
 )
@@ -77,8 +80,16 @@ func (s *Server) handleHealth(ctx fiber.Ctx) error {
 	return ctx.SendString("ok")
 }
 
-// handleSubscription proxies GET /s/:token to the origin subscription with
-// the stored HWID attached, passing the response through as-is.
+// fetchResult is the outcome of fetching one origin.
+type fetchResult struct {
+	res *origin.Result
+	err error
+}
+
+// handleSubscription serves GET /s/:token. A subscription with a single origin
+// is passed through as-is. With several origins each one is fetched with its
+// own HWID and the share links are merged; origins that fail are skipped as
+// long as one of them answers.
 func (s *Server) handleSubscription(ctx fiber.Ctx) error {
 	token := ctx.Params("token")
 	sub, err := s.store.GetByToken(ctx.Context(), token)
@@ -89,23 +100,81 @@ func (s *Server) handleSubscription(ctx fiber.Ctx) error {
 		slog.Error("web: lookup failed", "token", token, "err", err)
 		return ctx.Status(fiber.StatusInternalServerError).SendString("internal error")
 	}
+	if len(sub.Origins) == 0 {
+		return ctx.Status(fiber.StatusNotFound).SendString("subscription has no origins")
+	}
 
 	// Best effort: remember which device fetched the subscription, even if
-	// the origin request below fails.
+	// the origin requests below fail.
 	if err := s.store.TouchDevice(ctx.Context(), sub.ID, deviceInfo(ctx)); err != nil {
 		slog.Warn("web: record device failed", "sub_id", sub.ID, "err", err)
 	}
 
-	res, err := s.origin.Fetch(ctx.Context(), sub)
+	results := s.fetchOrigins(ctx.Context(), sub)
+
+	if len(sub.Origins) == 1 {
+		r := results[0]
+		if r.err != nil {
+			return ctx.Status(fiber.StatusBadGateway).SendString("origin unavailable")
+		}
+		slog.Info("web: subscription served",
+			"sub_id", sub.ID, "status", r.res.StatusCode, "size", len(r.res.Body))
+		copyHeaders(ctx, r.res.Header)
+		return ctx.Status(r.res.StatusCode).Send(r.res.Body)
+	}
+
+	parts := make([]merge.Part, 0, len(results))
+	for _, r := range results {
+		switch {
+		case r.err != nil:
+			continue
+		case r.res.StatusCode != fiber.StatusOK:
+			slog.Warn("web: origin returned non-200", "sub_id", sub.ID, "status", r.res.StatusCode)
+			continue
+		}
+		parts = append(parts, merge.Part{Body: r.res.Body, Header: r.res.Header})
+	}
+	if len(parts) == 0 {
+		return ctx.Status(fiber.StatusBadGateway).SendString("origin unavailable")
+	}
+	merged, err := merge.Merge(parts)
 	if err != nil {
-		slog.Error("web: origin fetch failed", "sub_id", sub.ID, "err", err)
+		slog.Error("web: merge failed", "sub_id", sub.ID, "err", err)
 		return ctx.Status(fiber.StatusBadGateway).SendString("origin unavailable")
 	}
 
 	slog.Info("web: subscription served",
-		"sub_id", sub.ID, "status", res.StatusCode, "size", len(res.Body))
+		"sub_id", sub.ID, "origins", len(sub.Origins), "merged", len(parts), "size", len(merged.Body))
 
-	for key, values := range res.Header {
+	copyHeaders(ctx, merged.Header)
+	ctx.Set("Profile-Title", sub.Name)
+	return ctx.Status(fiber.StatusOK).Send(merged.Body)
+}
+
+// fetchOrigins requests every origin of the subscription concurrently. The
+// result slice keeps the order of sub.Origins.
+func (s *Server) fetchOrigins(ctx context.Context, sub store.Subscription) []fetchResult {
+	out := make([]fetchResult, len(sub.Origins))
+	var wg sync.WaitGroup
+	for i, o := range sub.Origins {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			res, err := s.origin.Fetch(ctx, o)
+			if err != nil {
+				slog.Error("web: origin fetch failed", "sub_id", sub.ID, "origin_id", o.ID, "err", err)
+			}
+			out[i] = fetchResult{res: res, err: err}
+		}()
+	}
+	wg.Wait()
+	return out
+}
+
+// copyHeaders passes origin headers to the client, minus hop-by-hop and
+// identity headers.
+func copyHeaders(ctx fiber.Ctx, header http.Header) {
+	for key, values := range header {
 		lower := strings.ToLower(key)
 		if hopByHopHeaders[lower] {
 			continue
@@ -114,7 +183,6 @@ func (s *Server) handleSubscription(ctx fiber.Ctx) error {
 			ctx.Set(key, v)
 		}
 	}
-	return ctx.Status(res.StatusCode).Send(res.Body)
 }
 
 // Metadata limits protect the database from oversized or abusive headers.
