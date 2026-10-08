@@ -1,93 +1,93 @@
 # ProxyConnectorBot
 
-Telegram-бот и HTTP-прокси для VPN-подписок (Happ/INCY) с привязкой к HWID.
+Telegram bot and HTTP proxy for VPN subscriptions (Happ/INCY) with HWID binding.
 
-Сервис позволяет использовать подписки, привязанные к устройству (HWID), в
-приложениях, которые **не отправляют** HWID при обновлении подписки:
+The service lets you use subscriptions bound to a device (HWID) in apps that
+**do not send** the HWID when refreshing the subscription:
 
-1. Ты добавляешь в бота origin-ссылку подписки (ссылку провайдера).
-2. Бот генерирует HWID **один раз**, закрепляет его за подпиской и сохраняет в Postgres.
-3. Бот выдаёт ссылку вида `https://твой-домен/s/<token>`.
-4. Когда приложение запрашивает эту ссылку (например, при нажатии «обновить»),
-   сервер идёт к провайдеру с сохранённым HWID и отдаёт ответ провайдера
-   **как есть** (passthrough) — уже без HWID.
+1. You add the subscription's origin link (the provider's link) to the bot.
+2. The bot generates a HWID **once**, binds it to the subscription and stores it in Postgres.
+3. The bot issues a link like `https://your-domain/s/<token>`.
+4. When the app requests this link (for example, when you press "refresh"),
+   the server goes to the provider with the stored HWID and returns the provider's
+   response **as is** (passthrough) — now with the HWID attached.
 
-## Как передаётся HWID провайдеру
+## How the HWID is passed to the provider
 
-Оба клиента (Happ и INCY) передают HWID заголовком `x-hwid` (вместе с
-`x-device-os`, `x-ver-os`, `x-device-model`). Часть панелей (3x-ui, PasarGuard и
-т.п.) отклоняют запросы подписки без `x-hwid`. У Happ есть также «HWID-ссылки»,
-где HWID зашит в query-параметр URL.
+Both clients (Happ and INCY) pass the HWID in the `x-hwid` header (together with
+`x-device-os`, `x-ver-os`, `x-device-model`). Some panels (3x-ui, PasarGuard, etc.)
+reject subscription requests without `x-hwid`. Happ also has "HWID links", where
+the HWID is embedded in the URL's query parameter.
 
-Поэтому для каждого origin хранится способ передачи:
+That is why each origin stores its delivery mode:
 
-| Режим      | Что отправляется провайдеру             | Когда используется                          |
+| Mode       | What is sent to the provider            | When it is used                             |
 | ---------- | --------------------------------------- | ------------------------------------------- |
-| `header`   | заголовок `x-hwid: <hwid>` (по умолч.)  | обычные подписки Happ/INCY                  |
-| `query`    | query-параметр `?hwid=<hwid>`           | HWID-ссылки Happ                            |
+| `header`   | `x-hwid: <hwid>` header (default)       | regular Happ/INCY subscriptions             |
+| `query`    | `?hwid=<hwid>` query parameter          | Happ HWID links                             |
 
-- При добавлении режим выбирается автоматически: если origin-URL уже содержит
-  параметр с `hwid` в имени — используется query-режим с этим же именем,
-  иначе — header-режим.
-- Формат HWID — uppercase UUID (`8-4-4-4-12`), как у INCY. Генерируется один
-  раз при создании origin и хранится в базе.
+- When adding an origin, the mode is chosen automatically: if the origin URL already
+  contains a parameter with `hwid` in its name, query mode is used with that same
+  name; otherwise header mode is used.
+- The HWID format is an uppercase UUID (`8-4-4-4-12`), as in INCY. It is generated
+  once when the origin is created and stored in the database.
 
-Помимо HWID провайдеру уходят стабильные device-заголовки
-(`x-device-os`, `x-ver-os`, `x-device-model`) и User-Agent — всё настраивается
-через переменные окружения.
+Besides the HWID, stable device headers (`x-device-os`, `x-ver-os`,
+`x-device-model`) and the User-Agent are sent to the provider — all of it is
+configurable via environment variables.
 
-## Стек
+## Stack
 
-- [Bun](https://bun.sh) — рантайм, менеджер пакетов и тест-раннер (TypeScript без сборки)
-- [Elysia](https://elysiajs.com) — HTTP-сервер (эндпоинт подписок)
+- [Bun](https://bun.sh) — runtime, package manager and test runner (TypeScript without a build step)
+- [Elysia](https://elysiajs.com) — HTTP server (subscription endpoint)
 - [grammY](https://grammy.dev) — Telegram Bot API (long polling)
-- [Bun SQL](https://bun.sh/docs/runtime/sql) — Postgres из коробки (`bun.SQL`)
-- Postgres — хранение пользователей, подписок, HWID и устройств
-- Caddy — reverse proxy и HTTPS
-- Docker Compose — dev- и prod-окружение
+- [Bun SQL](https://bun.sh/docs/runtime/sql) — built-in Postgres client (`bun.SQL`)
+- Postgres — storage for users, subscriptions, HWIDs and devices
+- Caddy — reverse proxy and HTTPS
+- Docker Compose — dev and prod environments
 
-## Структура
+## Structure
 
 ```
-src/index.ts           — точка входа (бот + HTTP + graceful shutdown)
-src/config.ts          — конфигурация из окружения
-src/migrate.ts         — раннер рукописных SQL-миграций
-src/migrations/*.sql   — миграции (NNNN_name.sql)
-src/store.ts           — Postgres через bun.SQL
-src/origin.ts          — запросы к провайдеру с подстановкой HWID
-src/merge.ts           — склейка нескольких подписок
-src/hwid.ts            — генерация HWID
-src/url.ts             — URL-хелперы (режим HWID, имя по умолчанию)
+src/index.ts           — entry point (bot + HTTP + graceful shutdown)
+src/config.ts          — configuration from the environment
+src/migrate.ts         — runner for handwritten SQL migrations
+src/migrations/*.sql   — migrations (NNNN_name.sql)
+src/store.ts           — Postgres via bun.SQL
+src/origin.ts          — requests to the provider with HWID substitution
+src/merge.ts           — merging several subscriptions
+src/hwid.ts            — HWID generation
+src/url.ts             — URL helpers (HWID mode, default name)
 src/web.ts             — Elysia: GET /s/:token, GET /healthz
-src/bot/service.ts     — Telegram-бот: команды, кнопки, сценарии
-src/bot/views.ts       — клавиатуры и тексты бота
-src/i18n/              — локализация ru/en
-tests/                 — bun test: unit + интеграционные
-Dockerfile, docker-compose*.yml, Caddyfile*  — dev/prod-окружение
+src/bot/service.ts     — Telegram bot: commands, buttons, flows
+src/bot/views.ts       — bot keyboards and texts
+src/i18n/              — ru/en localization
+tests/                 — bun test: unit + integration
+Dockerfile, docker-compose*.yml, Caddyfile*  — dev/prod environment
 ```
 
-## Быстрый старт (dev)
+## Quick start (dev)
 
 ```bash
 cp .env.example .env
-# заполни TELEGRAM_BOT_TOKEN, при необходимости APP_DOMAIN / PUBLIC_BASE_URL
+# fill in TELEGRAM_BOT_TOKEN, and APP_DOMAIN / PUBLIC_BASE_URL if needed
 
 docker compose -f docker-compose.dev.yml up --build
 ```
 
-Dev-стек поднимает Postgres (`localhost:5433`), приложение и Caddy на
-`http://localhost:8080`. Открой `http://localhost:8080/healthz`.
+The dev stack starts Postgres (`localhost:5433`), the app and Caddy on
+`http://localhost:8080`. Open `http://localhost:8080/healthz`.
 
-Локальный запуск без Docker (Bun сам подхватывает `.env`; нужен только Postgres):
+Running locally without Docker (Bun loads `.env` automatically; only Postgres is needed):
 
 ```bash
 bun install
 bun run src/index.ts
 ```
 
-При старте автоматически применяются миграции из `src/migrations`.
+Migrations from `src/migrations` are applied automatically on startup.
 
-## Прод
+## Production
 
 ```bash
 cp .env.example .env
@@ -97,132 +97,131 @@ cp .env.example .env
 docker compose -f docker-compose.yml up -d --build
 ```
 
-`APP_DOMAIN` должен уже указывать на сервер: Caddy сам получит сертификат
-Let's Encrypt и проксирует трафик на приложение.
+`APP_DOMAIN` must already point to the server: Caddy obtains a Let's Encrypt
+certificate by itself and proxies traffic to the app.
 
-## Разработка
+## Development
 
-| Команда              | Действие                                   |
-| -------------------- | ------------------------------------------ |
-| `bun install`        | установить зависимости                     |
-| `bun run dev`        | запуск с авто-перезагрузкой (`--watch`)    |
-| `bun run typecheck`  | проверка типов (`tsc --noEmit`)            |
-| `bun test`           | unit-тесты                                 |
-| `TEST_DATABASE_URL=... bun test` | unit + интеграционные тесты    |
+| Command                          | Action                                     |
+| -------------------------------- | ------------------------------------------ |
+| `bun install`                    | install dependencies                       |
+| `bun run dev`                    | run with auto-reload (`--watch`)           |
+| `bun run typecheck`              | type check (`tsc --noEmit`)                |
+| `bun test`                       | unit tests                                 |
+| `TEST_DATABASE_URL=... bun test` | unit + integration tests                   |
 
-Интеграционные тесты (`tests/integration.test.ts`) **пропускаются** без
-`TEST_DATABASE_URL`. Если переменная задана, они мигрируют указанную БД и
-создают/удаляют свои строки — укажи одноразовый Postgres.
+Integration tests (`tests/integration.test.ts`) are **skipped** without
+`TEST_DATABASE_URL`. If the variable is set, they migrate the specified database and
+create/delete their own rows — use a disposable Postgres.
 
-## Релиз (GitHub Actions → GHCR)
+## Release (GitHub Actions → GHCR)
 
-CI запускается на pull request (проверка: typecheck + тесты) и на теги,
-начинающиеся с `v` (сборка и публикация образа):
+CI runs on pull requests (check: typecheck + tests) and on tags starting with `v`
+(build and publish the image):
 
-1. **check** — `bun run typecheck` и `bun test`.
-2. **build** — собирает Docker-образ и сохраняет его артефактом (только теги).
-3. **push** — пушит образ в GHCR: сначала тег версии (`v1.0.0`), затем `latest`.
+1. **check** — `bun run typecheck` and `bun test`.
+2. **build** — builds the Docker image and saves it as an artifact (tags only).
+3. **push** — pushes the image to GHCR: the version tag (`v1.0.0`) first, then `latest`.
 
 ```bash
 git tag v1.0.0
 git push origin v1.0.0
 ```
 
-После прогона образ доступен как:
+After the run, the image is available as:
 
 ```
 ghcr.io/<owner>/<repo>:v1.0.0
 ghcr.io/<owner>/<repo>:latest
 ```
 
-## Переменные окружения
+## Environment variables
 
-| Переменная           | Обязательна | По умолчанию               | Описание                                            |
-| -------------------- | ----------- | -------------------------- | --------------------------------------------------- |
-| `TELEGRAM_BOT_TOKEN` | да          | —                          | токен бота                                          |
-| `DATABASE_URL`       | да*         | —                          | DSN Postgres (*compose задаёт автоматически)        |
-| `PUBLIC_BASE_URL`    | да          | —                          | публичный базовый URL для ссылок (без `/` в конце)  |
-| `APP_DOMAIN`         | да (compose)| —                          | домен для Caddy                                     |
-| `CADDY_EMAIL`        | в проде     | —                          | email для Let's Encrypt                             |
-| `HTTP_ADDR`          | нет         | `:8080`                    | адрес HTTP-сервера                                  |
-| `DEFAULT_LOCALE`     | нет         | `ru`                       | стартовый язык новых пользователей (`ru` / `en`)    |
-| `HWID_DEVICE_OS`     | нет         | `android`                  | значение `x-device-os` для провайдера               |
-| `HWID_VER_OS`        | нет         | `14`                       | значение `x-ver-os`                                 |
-| `HWID_DEVICE_MODEL`  | нет         | `Pixel 7`                  | значение `x-device-model`                           |
-| `ORIGIN_USER_AGENT`  | нет         | `Happ/2.4.1 (Android 14)`  | User-Agent запросов к провайдеру                    |
-| `ORIGIN_TIMEOUT`     | нет         | `20s`                      | таймаут запроса к провайдеру (формат Go: `20s`)     |
-| `ORIGIN_MAX_BODY`    | нет         | `20971520`                 | максимальный размер тела подписки, в байтах         |
-| `LOG_LEVEL`          | нет         | `info`                     | уровень логов (`debug`/`info`/`warn`/`error`)       |
+| Variable             | Required    | Default                    | Description                                          |
+| -------------------- | ----------- | -------------------------- | ---------------------------------------------------- |
+| `TELEGRAM_BOT_TOKEN` | yes         | —                          | bot token                                            |
+| `DATABASE_URL`       | yes*        | —                          | Postgres DSN (*set automatically by compose)         |
+| `PUBLIC_BASE_URL`    | yes         | —                          | public base URL for links (no trailing `/`)          |
+| `APP_DOMAIN`         | yes (compose)| —                         | domain for Caddy                                     |
+| `CADDY_EMAIL`        | in prod     | —                          | email for Let's Encrypt                              |
+| `HTTP_ADDR`          | no          | `:8080`                    | HTTP server address                                  |
+| `DEFAULT_LOCALE`     | no          | `ru`                       | default language for new users (`ru` / `en`)         |
+| `HWID_DEVICE_OS`     | no          | `android`                  | value of `x-device-os` sent to the provider          |
+| `HWID_VER_OS`        | no          | `14`                       | value of `x-ver-os`                                  |
+| `HWID_DEVICE_MODEL`  | no          | `Pixel 7`                  | value of `x-device-model`                            |
+| `ORIGIN_USER_AGENT`  | no          | `Happ/2.4.1 (Android 14)`  | User-Agent of requests to the provider               |
+| `ORIGIN_TIMEOUT`     | no          | `20s`                      | timeout for provider requests (Go format: `20s`)     |
+| `ORIGIN_MAX_BODY`    | no          | `20971520`                 | maximum size of the subscription body, in bytes      |
+| `LOG_LEVEL`          | no          | `info`                     | log level (`debug`/`info`/`warn`/`error`)            |
 
-## Бот
+## Bot
 
-| Команда  | Действие                                        |
-| -------- | ----------------------------------------------- |
-| `/start` | приветствие и меню                              |
-| `/add`   | добавить подписку (URL → название)              |
-| `/subs`  | список подписок                                 |
-| `/lang`  | язык интерфейса (русский / english)             |
-| `/help`  | как всё работает                                |
-| `/cancel`| отменить текущий сценарий                       |
+| Command   | Action                                          |
+| --------- | ----------------------------------------------- |
+| `/start`  | greeting and menu                               |
+| `/add`    | add a subscription (URL → name)                 |
+| `/subs`   | list of subscriptions                           |
+| `/lang`   | interface language (русский / english)          |
+| `/help`   | how everything works                            |
+| `/cancel` | cancel the current flow                         |
 
-В карточке подписки доступны: проверка связи с провайдером, список устройств,
-переименование и удаление.
+The subscription card provides: a provider connectivity check, the device list,
+renaming and deletion.
 
-Каждый пользователь видит только свои подписки.
+Each user sees only their own subscriptions.
 
-### Несколько origin
+### Multiple origins
 
-Одна подписка может собирать несколько источников (провайдерских ссылок). У
-каждого источника свой HWID, он привязывается при добавлении. Кнопка
-«🌍 Источники» в карточке подписки показывает список; по нажатию на источник
-открываются его настройки — **включение/выключение** и удаление. Выключенный
-источник не участвует в выдаче `/s/:token` и в проверке, но остаётся в базе.
-Последний источник удалить нельзя.
+One subscription can combine several sources (provider links). Each source has
+its own HWID, which is bound when it is added. The "🌍 Origins" button in the
+subscription card shows the list; tapping an origin opens its settings —
+**enable/disable** and delete. A disabled origin is not used in `/s/:token`
+responses or in checks, but stays in the database. The last origin cannot be deleted.
 
-HWID в интерфейсе бота не показывается: видны только URL источника, способ
-передачи HWID (заголовок/параметр) и статус.
+The HWID is never shown in the bot interface: only the origin URL, the HWID
+delivery mode (header/parameter) and the status are visible.
 
-При запросе `/s/:token` сервис опрашивает все origin параллельно, каждый со своим
-HWID, и склеивает списки ссылок (дубликаты убираются). Формат ответа (plain или
-base64) следует за ответами провайдеров; `subscription-userinfo` суммируется по
-трафику, срок окончания берётся ближайший. Если часть origin не ответила, отдаются
-остальные; если не ответил ни один, сервис вернёт 502. Подписка с одним origin
-отдаётся как раньше, без изменений.
+When `/s/:token` is requested, the service queries all origins in parallel, each
+with its own HWID, and merges the link lists (duplicates are removed). The response
+format (plain or base64) follows the providers' responses; `subscription-userinfo`
+is summed by traffic, and the nearest expiry date is used. If some origins do not
+respond, the rest are returned; if none respond, the service returns 502. A
+subscription with a single origin is returned as before, unchanged.
 
-### Устройства
+### Devices
 
-На каждый запрос `/s/:token` сервис запоминает, какое устройство обратилось:
+For each `/s/:token` request, the service remembers which device made it:
 
-- если клиент прислал HWID (заголовок `x-hwid` или `?hwid=`) — группируем по нему
-  и показываем HWID;
-- если HWID нет — группируем по отпечатку метаданных (User-Agent, `x-device-os`,
-  `x-ver-os`, `x-device-model`) и показываем то, что видно.
+- if the client sent a HWID (the `x-hwid` header or `?hwid=`) — devices are grouped
+  by it and the HWID is shown;
+- if there is no HWID — devices are grouped by a metadata fingerprint (User-Agent,
+  `x-device-os`, `x-ver-os`, `x-device-model`) and whatever is visible is shown.
 
-Для каждого устройства хранятся: HWID (если есть), модель, ОС, User-Agent, IP
-(из `X-Forwarded-For`, т.е. реальный IP клиента за Caddy), число запросов и
-время последнего подключения. Список — кнопка «📱 Устройства» в карточке
-подписки (до 30 последних, свежие сверху).
+For each device, the following is stored: HWID (if any), model, OS, User-Agent, IP
+(from `X-Forwarded-For`, i.e. the real client IP behind Caddy), request count and
+the time of the last connection. The list is available via the "📱 Devices" button
+in the subscription card (up to the 30 most recent, newest first).
 
 ## HTTP API
 
-| Метод | Путь          | Описание                                                        |
-| ----- | ------------- | --------------------------------------------------------------- |
-| GET   | `/s/:token`   | отдаёт содержимое подписки провайдера с подставленным HWID       |
-| GET   | `/healthz`    | проверка здоровья (`ok` / `db unavailable`)                      |
+| Method | Path          | Description                                                     |
+| ------ | ------------- | --------------------------------------------------------------- |
+| GET    | `/s/:token`   | returns the provider's subscription content with the HWID set   |
+| GET    | `/healthz`    | health check (`ok` / `db unavailable`)                          |
 
-Ответ `/s/:token` — прозрачный passthrough: статус, тело и заголовки
-провайдера (`content-type`, `content-disposition`, `profile-*`,
-`subscription-*` и т.д.) без hop-by-hop заголовков. Метаданные клиента при этом
-записываются в таблицу `devices`.
+The `/s/:token` response is a transparent passthrough: the provider's status, body
+and headers (`content-type`, `content-disposition`, `profile-*`,
+`subscription-*`, etc.) without hop-by-hop headers. Client metadata is recorded
+in the `devices` table at the same time.
 
-## Примечания
+## Notes
 
-- Состояния сценариев (ожидание URL, названия и т.д.) живут в памяти процесса
-  и сбрасываются при рестарте — данные подписок при этом не теряются.
-- HWID генерируется один раз при создании источника и больше не меняется; в
-  боте он не отображается.
-- Сервис не переписывает содержимое подписки: провайдер получает один и тот же
-  HWID при каждом обновлении, а приложение получает исходный ответ провайдера.
-- Миграции — обычные `NNNN_name.sql` в `src/migrations`. Применённые миграции
-  записываются в `schema_migrations`; не редактируй уже применённую миграцию —
-  контрольных сумм нет, поэтому она не выполнится повторно.
+- Flow states (waiting for a URL, a name, etc.) live in process memory and are
+  reset on restart — subscription data is not lost.
+- The HWID is generated once when an origin is created and never changes; it is
+  not displayed in the bot.
+- The service does not rewrite subscription content: the provider receives the same
+  HWID on every refresh, and the app receives the provider's original response.
+- Migrations are regular `NNNN_name.sql` files in `src/migrations`. Applied migrations
+  are recorded in `schema_migrations`; do not edit an already applied migration —
+  there are no checksums, so it will not run again.
