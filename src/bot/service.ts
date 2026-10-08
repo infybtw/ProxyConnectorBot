@@ -1,11 +1,12 @@
 // Telegram bot: commands, inline callbacks and interactive flows (grammY).
 
-import { Bot, type Context, type InlineKeyboard } from "grammy";
+import { Bot, type Context, type InlineKeyboard, InputFile } from "grammy";
 import type { Config } from "../config";
 import { generateHWID } from "../hwid";
 import { normalize, t } from "../i18n";
 import { log } from "../log";
 import type { OriginClient } from "../origin";
+import { renderQrPng } from "../qr";
 import { HWID_MODE_HEADER, LastOriginError, NotFoundError, type Store, type Subscription } from "../store";
 import { defaultName, detectHwidMode, isHttpUrl } from "../url";
 import {
@@ -416,6 +417,10 @@ export class BotService {
       await this.actAddOriginStart(ctx, uid, lang, id);
       return;
     }
+    if ((id = parseId(CB.subQr, data)) > 0) {
+      await this.actQr(ctx, uid, lang, id);
+      return;
+    }
     if ((id = parseId(CB.subOrigins, data)) > 0) {
       const sub = await this.loadSub(ctx, uid, lang, id);
       if (sub === null) return;
@@ -454,6 +459,31 @@ export class BotService {
       }
     }
     await this.sendHtml(ctx, t(lang, "sub.test_result", escapeHtml(sub.name), lines.join("\n")), kbSub(id, lang));
+  }
+
+  /** Sends the public subscription link as a QR code photo. */
+  private async actQr(ctx: Context, uid: number, lang: string, id: number): Promise<void> {
+    const sub = await this.loadSub(ctx, uid, lang, id);
+    if (sub === null) return;
+    await this.answer(ctx);
+    const link = subscriptionLink(this.cfg.publicBaseUrl, sub.token);
+    let png: Uint8Array;
+    try {
+      png = await renderQrPng(link);
+    } catch (err) {
+      log.error("bot: render qr failed", { id, err });
+      await this.sendHtml(ctx, t(lang, "err.generic"), kbSub(id, lang));
+      return;
+    }
+    try {
+      await ctx.replyWithPhoto(new InputFile(png, "subscription-qr.png"), {
+        caption: t(lang, "sub.qr_caption", escapeHtml(sub.name), link),
+        parse_mode: "HTML",
+        reply_markup: kbSub(id, lang),
+      });
+    } catch (err) {
+      log.warn("bot: send qr failed", { id, err });
+    }
   }
 
   /** Asks for the URL of one more origin of the subscription. */

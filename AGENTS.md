@@ -66,6 +66,8 @@ Go-style duration string (`20s`, `1m30s`).
   `x-device-os`, `x-ver-os`, `x-device-model` so the bound HWID never leaks to
   clients. Keep `HOP_BY_HOP_HEADERS` in sync when adding identity headers. The
   handler returns a raw `Response` (constructed from the origin result).
+- QR codes (`src/qr.ts`): the `qrcode` package draws the PNG and `Bun.Image`
+  re-encodes it. Only the public `/s/:token` link is encoded, never the HWID.
 - Device tracking (`devices` table) groups requests by HWID when present, else by
   an 8-byte metadata fingerprint (`sha256`, first 16 hex chars). `touchDevice`
   uses `COALESCE(NULLIF(...))` so empty metadata never overwrites known values.

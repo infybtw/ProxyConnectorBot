@@ -24,6 +24,7 @@ export const CB = {
   subOriginToggle: "sub:oe:", // sub:oe:<id>  -> enable/disable origin <origin id>
   subOrigDelete: "sub:og:", // sub:og:<id>  -> delete origin <origin id>
   subOrigAdd: "sub:oa:", // sub:oa:<id>  -> add origin to subscription <id>
+  subQr: "sub:q:", // sub:q:<id>   -> QR code of the subscription link
 } as const;
 
 /** A single inline button described as a label/data pair. */
@@ -77,7 +78,10 @@ export function kbSub(id: number, lang: string): InlineKeyboard {
       { text: t(lang, "btn.test"), data: `${CB.subTest}${id}` },
       { text: t(lang, "btn.devices"), data: `${CB.subDevices}${id}` },
     ],
-    [{ text: t(lang, "btn.origins"), data: `${CB.subOrigins}${id}` }],
+    [
+      { text: t(lang, "btn.origins"), data: `${CB.subOrigins}${id}` },
+      { text: t(lang, "btn.qr"), data: `${CB.subQr}${id}` },
+    ],
     [
       { text: t(lang, "btn.rename"), data: `${CB.subRename}${id}` },
       { text: t(lang, "btn.delete"), data: `${CB.subDelete}${id}` },

@@ -15,6 +15,7 @@
   "btn.delete": "🗑 Delete",
   "btn.delete_confirm": "❗️ Yes, delete",
   "btn.origins": "🌍 Origins",
+  "btn.qr": "🔳 QR code",
   "btn.origin_add": "➕ Add origin",
   "btn.origin_enable": "✅ Enable",
   "btn.origin_disable": "⏸ Disable",
@@ -50,6 +51,7 @@
   "sub.delete_confirm": "⚠️ Delete subscription \"{0}\"? This cannot be undone.",
   "sub.rename.ask": "Send a new name for the subscription (max 64 characters).",
   "sub.renamed": "✅ Subscription renamed to \"{0}\".",
+  "sub.qr_caption": "🔳 QR code of \"{0}\":\n<code>{1}</code>",
 
   "devices.title": "📱 Devices of \"{0}\" ({1}):",
   "devices.empty": "No connections yet. As soon as an app refreshes the subscription, the device will appear here.",
